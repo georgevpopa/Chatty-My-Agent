@@ -165,7 +165,20 @@ def save_conversation(messages: list[dict], path: str = None):
 def main():
     global use_gemini, streaming, todos, snippets, aliases, pinned_context, undo_stack, token_estimate, config, persona, memory, bookmarks
 
-    console.print("[bold green]Chatty-My-Agent[/bold green] — Tech assistant (Gemini + Groq)")
+    console.print("""[bold green]
+    ╔══════════════════════════════════════╗
+    ║                                      ║
+    ║   [bold yellow]  ╔═══╗[/bold yellow]                            ║
+    ║   [bold yellow]  ║■ ■║[/bold yellow]  [bold cyan]Chatty[/bold cyan]                    ║
+    ║   [bold yellow]  ║ ▽ ║[/bold yellow]  [dim]Your Friendly Assistant[/dim]   ║
+    ║   [bold yellow]  ╚╦═╦╝[/bold yellow]                            ║
+    ║   [bold yellow]  ╔╩═╩╗[/bold yellow]  [dim]Powered by Gemini + Groq[/dim]  ║
+    ║   [bold yellow]  ║   ║[/bold yellow] /                          ║
+    ║   [bold yellow]  ╚╦ ╦╝[/bold yellow]                            ║
+    ║   [bold yellow]   ║ ║[/bold yellow]                             ║
+    ║                                      ║
+    ╚══════════════════════════════════════╝
+[/bold green]""")
     console.print("Type [bold]/help[/bold] for commands, or just ask a question")
     console.print(f"[dim]{random.choice(TIPS)}[/dim]")
     console.print("---")

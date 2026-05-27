@@ -22,7 +22,7 @@ HTML = """
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: 'Segoe UI', sans-serif; background: #1a1a2e; color: #eee; height: 100vh; display: flex; flex-direction: column; }
-        #header { padding: 12px 20px; background: #16213e; border-bottom: 1px solid #0f3460; }
+        #header { padding: 12px 20px; background: #16213e; border-bottom: 1px solid #0f3460; text-align: center; }
         #header h1 { font-size: 1.2em; color: #4ecca3; }
         #chat { flex: 1; overflow-y: auto; padding: 20px; }
         .msg { margin-bottom: 16px; max-width: 80%; padding: 12px 16px; border-radius: 12px; line-height: 1.5; white-space: pre-wrap; }
@@ -39,7 +39,15 @@ HTML = """
     </style>
 </head>
 <body>
-    <div id="header"><h1>🤖 Chatty-My-Agent</h1></div>
+    <div id="header">
+        <pre style="color:#4ecca3;font-size:0.6em;line-height:1.2;margin:0;">  ╔═══╗
+  ║■ ■║  Chatty
+  ║ ▽ ║  Your Friendly Assistant
+  ╚╦═╦╝/
+  ╔╩═╩╗
+  ║   ║
+  ╚╦ ╦╝</pre>
+    </div>
     <div id="chat"></div>
     <div id="input-area">
         <input id="input" placeholder="Ask anything... (or use /commands)" autofocus>
