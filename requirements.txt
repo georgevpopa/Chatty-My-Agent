@@ -1,5 +1,8 @@
 google-generativeai==0.8.3
 groq==1.2.0
+cohere==5.13.0
+mistralai==1.5.0
+httpx==0.28.1
 python-dotenv==1.0.1
 rich==13.9.4
 duckduckgo-search==7.5.1

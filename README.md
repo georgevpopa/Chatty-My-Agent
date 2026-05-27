@@ -45,24 +45,35 @@ pip install sounddevice numpy
 
 ### Step 5: Get Free API Keys
 
-1. **Google Gemini** (primary AI):
-   - Go to https://aistudio.google.com/apikey
-   - Click "Create API Key"
-   - Copy the key
+You need **at least one** key. More keys = more models to choose from.
 
-2. **Groq** (fallback AI):
-   - Go to https://console.groq.com/keys
-   - Sign up and create an API key
-   - Copy the key
+| Provider | Get Key | Free Limits |
+|----------|---------|-------------|
+| **Google Gemini** ⭐ | https://aistudio.google.com/apikey | 15 RPM, 1M tokens/day |
+| **Groq** ⭐ | https://console.groq.com/keys | 30 RPM, 14.4K req/day |
+| **Cohere** | https://dashboard.cohere.com/api-keys | 20 RPM, 1K req/month |
+| **Mistral** | https://console.mistral.ai/api-keys | Free tier |
+| **OpenRouter** | https://openrouter.ai/keys | 50 req/day (free models) |
+| **Together AI** | https://api.together.xyz/settings/api-keys | $5 free credits |
+| **HuggingFace** | https://huggingface.co/settings/tokens | Rate limited |
+
+⭐ = Recommended to start with
 
 ### Step 6: Create .env File
 
-In the `Chatty-My-Agent` folder, create a file called `.env`:
+In the `Chatty-My-Agent` folder, create a file called `.env` (or copy `.env.example`):
 
 ```
 GEMINI_API_KEY=paste_your_gemini_key_here
 GROQ_API_KEY=paste_your_groq_key_here
+COHERE_API_KEY=paste_your_cohere_key_here
+MISTRAL_API_KEY=paste_your_mistral_key_here
+OPENROUTER_API_KEY=paste_your_openrouter_key_here
+TOGETHER_API_KEY=paste_your_together_key_here
+HUGGINGFACE_API_KEY=paste_your_huggingface_key_here
 ```
+
+Only fill in the ones you have — the rest will just not be available.
 
 ### Step 7: Run It!
 
@@ -86,8 +97,10 @@ Type a question and press Enter. That's it!
 ## Features
 
 ### AI & Models
-- **Dual LLM** — Gemini 2.0 Flash + Groq Llama 3.3 70B with auto-fallback
-- **Streaming** — Responses appear word by word
+- **7 LLM providers** — Gemini, Groq, Cohere, Mistral, OpenRouter, Together AI, HuggingFace
+- **Model picker** — `/models` to list, `/model <name>` to switch, `/model fallback <name>`
+- **Auto-fallback** — If primary fails, seamlessly switches to fallback
+- **Streaming** — Responses appear word by word (Gemini, Groq, Mistral)
 - **Personas** — Switch AI personality (senior dev, ELI5, code reviewer, DevOps)
 - **Persistent memory** — Teach the AI facts it remembers across sessions
 - **Autonomous agent** — AI decides what commands to run to achieve a goal
@@ -220,6 +233,27 @@ Type a question and press Enter. That's it!
 | `/model` | Switch Gemini/Groq |
 | `/help` | Show help |
 | `/quit` | Exit (auto-saves) |
+
+---
+
+## Available Models (7)
+
+| Key | Provider | Model | Streaming |
+|-----|----------|-------|-----------|
+| `gemini` | Google | Gemini 2.0 Flash | ✓ |
+| `groq` | Groq | Llama 3.3 70B | ✓ |
+| `cohere` | Cohere | Command R+ | — |
+| `mistral` | Mistral AI | Mistral Small 3.1 | ✓ |
+| `openrouter` | OpenRouter | Llama 3.3 70B (free) | — |
+| `together` | Together AI | Llama 3.3 70B Turbo | — |
+| `huggingface` | HuggingFace | Qwen 2.5 72B | — |
+
+Switch models:
+```bash
+You: /models                    # list all with status
+You: /model mistral             # switch to Mistral
+You: /model fallback cohere     # set Cohere as fallback
+```
 
 ---
 

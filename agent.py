@@ -9,7 +9,7 @@ from rich.console import Console
 from rich.markdown import Markdown
 from rich.theme import Theme
 
-from llm import call_gemini, call_groq, call_gemini_stream, call_groq_stream
+from llm import call_model, stream_model, MODELS
 from tools import read_file, run_command, web_search, scan_project, clipboard_copy, clipboard_paste, fetch_url, check_port, docker_status, docker_logs
 from storage import (load_config, save_config, load_aliases, save_aliases, save_history, load_history,
                      load_memory, add_memory, clear_memory, load_stats, update_stats, PERSONAS)
@@ -40,7 +40,8 @@ config = load_config()
 console = Console(theme=THEMES.get(config.get("theme", "dark")))
 
 # State
-use_gemini = config.get("model", "gemini") == "gemini"
+current_model = config.get("model", "gemini")
+fallback_model = config.get("fallback", "groq")
 streaming = config.get("streaming", True)
 persona = config.get("persona", "default")
 todos = []
@@ -59,42 +60,30 @@ def estimate_tokens(text: str) -> int:
 
 
 def get_response(messages: list[dict]) -> str:
-    global use_gemini
-    if use_gemini:
+    global current_model, fallback_model
+    try:
+        return call_model(current_model, messages, persona, memory)
+    except Exception as e:
+        console.print(f"[warning]{MODELS[current_model]['name']} failed ({e}), trying {MODELS[fallback_model]['name']}...[/warning]")
         try:
-            return call_gemini(messages, persona, memory)
-        except Exception as e:
-            console.print(f"[warning]Gemini failed ({e}), falling back to Groq...[/warning]")
-            try:
-                return call_groq(messages, persona, memory)
-            except Exception as e2:
-                return f"Both providers failed.\nGemini: {e}\nGroq: {e2}"
-    else:
-        try:
-            return call_groq(messages, persona, memory)
-        except Exception as e:
-            console.print(f"[warning]Groq failed ({e}), falling back to Gemini...[/warning]")
-            try:
-                return call_gemini(messages, persona, memory)
-            except Exception as e2:
-                return f"Both providers failed.\nGroq: {e}\nGemini: {e2}"
+            return call_model(fallback_model, messages, persona, memory)
+        except Exception as e2:
+            return f"Both providers failed.\n{current_model}: {e}\n{fallback_model}: {e2}"
 
 
 def get_response_stream(messages: list[dict]) -> str:
-    global use_gemini
+    global current_model, fallback_model
     full = ""
     try:
-        stream = call_gemini_stream(messages, persona, memory) if use_gemini else call_groq_stream(messages, persona, memory)
-        for chunk in stream:
+        for chunk in stream_model(current_model, messages, persona, memory):
             print(chunk, end="", flush=True)
             full += chunk
         print()
         return full
     except Exception as e:
-        console.print(f"\n[warning]Stream failed ({e}), trying fallback...[/warning]")
+        console.print(f"\n[warning]Stream failed ({e}), trying {MODELS[fallback_model]['name']}...[/warning]")
         try:
-            stream = call_groq_stream(messages, persona, memory) if use_gemini else call_gemini_stream(messages, persona, memory)
-            for chunk in stream:
+            for chunk in stream_model(fallback_model, messages, persona, memory):
                 print(chunk, end="", flush=True)
                 full += chunk
             print()
@@ -219,12 +208,32 @@ def main():
             continue
 
         # /model
-        if user_input.lower() == "/model":
-            use_gemini = not use_gemini
-            current = "Gemini" if use_gemini else "Groq"
-            config["model"] = "gemini" if use_gemini else "groq"
-            save_config(config)
-            console.print(f"[green]Switched primary model to {current}[/green]")
+        if user_input.lower().startswith("/model"):
+            args = user_input[6:].strip()
+            if not args or args == "s":
+                # /models - list all
+                console.print("[bold]Available models:[/bold]")
+                for key, info in MODELS.items():
+                    marker = " [green]◄ active[/green]" if key == current_model else ""
+                    fallback_marker = " [yellow](fallback)[/yellow]" if key == fallback_model else ""
+                    console.print(f"  [bold cyan]{key:12}[/bold cyan] {info['name']}{marker}{fallback_marker}")
+                console.print(f"\n[dim]Usage: /model <name> to switch, /model fallback <name> to set fallback[/dim]")
+            elif args.startswith("fallback "):
+                fb = args[9:].strip()
+                if fb in MODELS:
+                    fallback_model = fb
+                    config["fallback"] = fb
+                    save_config(config)
+                    console.print(f"[green]Fallback set to {MODELS[fb]['name']}[/green]")
+                else:
+                    console.print(f"[red]Unknown model. Available: {', '.join(MODELS.keys())}[/red]")
+            elif args in MODELS:
+                current_model = args
+                config["model"] = args
+                save_config(config)
+                console.print(f"[green]Switched to {MODELS[args]['name']}[/green]")
+            else:
+                console.print(f"[red]Unknown model. Available: {', '.join(MODELS.keys())}[/red]")
             continue
 
         # /stream
@@ -248,17 +257,19 @@ def main():
 
         # /status
         if user_input.lower() == "/status":
-            current_model = "Gemini" if use_gemini else "Groq"
             console.print(f"""
 [bold]Status:[/bold]
-  Model:      {current_model}
+  Model:      {MODELS[current_model]['name']}
+  Fallback:   {MODELS[fallback_model]['name']}
   Streaming:  {'ON' if streaming else 'OFF'}
+  Persona:    {persona}
   Theme:      {config.get('theme', 'dark')}
   Messages:   {len(messages)}
   Tokens:     ~{token_estimate:,}
   Todos:      {len(todos)} ({sum(1 for t in todos if t['done'])} done)
   Snippets:   {len(snippets)}
   Aliases:    {len(aliases)}
+  Memory:     {len(memory)} facts
   Context:    {len(pinned_context)} pinned files
   Session:    {format_duration(time.time() - session_start)}
 """)
