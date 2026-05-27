@@ -2,6 +2,7 @@ import os
 import sys
 import json
 import subprocess
+import time
 from pathlib import Path
 from datetime import datetime
 from dotenv import load_dotenv
@@ -25,6 +26,7 @@ use_gemini = True
 streaming = True
 todos = []
 snippets = {}
+session_start = time.time()
 
 
 def call_gemini(messages: list[dict]) -> str:
@@ -211,6 +213,28 @@ def save_conversation(messages: list[dict], path: str = None):
     return path
 
 
+def get_multiline_input() -> str:
+    """Read multiple lines until user types END on its own line."""
+    console.print("[dim]Enter text (type END on a new line to finish):[/dim]")
+    lines = []
+    while True:
+        line = input()
+        if line.strip() == "END":
+            break
+        lines.append(line)
+    return "\n".join(lines)
+
+
+def format_duration(seconds: float) -> str:
+    m, s = divmod(int(seconds), 60)
+    h, m = divmod(m, 60)
+    if h:
+        return f"{h}h {m}m"
+    elif m:
+        return f"{m}m {s}s"
+    return f"{s}s"
+
+
 def show_help():
     console.print("""
 [bold green]━━━ Chatty-My-Agent Help ━━━[/bold green]
@@ -219,15 +243,19 @@ def show_help():
 
   [bold cyan]/read <path>[/bold cyan]          Read a file and get AI analysis
   [bold cyan]/run <cmd>[/bold cyan]            Run a shell command and analyze output
+  [bold cyan]/shell <cmd>[/bold cyan]          Run command silently (no AI analysis)
   [bold cyan]/write <path>[/bold cyan]         Generate code/content and save to file
   [bold cyan]/append <path>[/bold cyan]        Append AI-generated content to existing file
+  [bold cyan]/refactor <path>[/bold cyan]      AI rewrites a file with improvements
+  [bold cyan]/test <path>[/bold cyan]          Generate unit tests for a file
   [bold cyan]/search <query>[/bold cyan]       Search the web (DuckDuckGo, free)
   [bold cyan]/explain <path>[/bold cyan]       Explain a file in plain English
   [bold cyan]/project <path>[/bold cyan]       Analyze an entire project folder
   [bold cyan]/fix[/bold cyan]                  Auto-fix the last error from /run
-  [bold cyan]/shell <cmd>[/bold cyan]          Run command silently (no AI analysis)
+  [bold cyan]/git[/bold cyan]                  Quick git status + recent commits
   [bold cyan]/paste[/bold cyan]                Analyze clipboard contents
   [bold cyan]/copy[/bold cyan]                 Copy last AI response to clipboard
+  [bold cyan]/multi[/bold cyan]                Enter multi-line input mode
   [bold cyan]/diff <f1> <f2>[/bold cyan]       Compare two files
   [bold cyan]/snippet <name>[/bold cyan]       Save last response as a named snippet
   [bold cyan]/snippets[/bold cyan]             List all saved snippets
@@ -236,10 +264,11 @@ def show_help():
   [bold cyan]/todo done <n>[/bold cyan]        Mark task #n as done
   [bold cyan]/history[/bold cyan]              Show conversation summary
   [bold cyan]/stream[/bold cyan]               Toggle streaming mode (word by word)
+  [bold cyan]/timer[/bold cyan]                Show session duration
+  [bold cyan]/status[/bold cyan]               Show current settings and stats
   [bold cyan]/save [path][/bold cyan]          Save conversation to markdown
   [bold cyan]/clear[/bold cyan]                Clear conversation history
   [bold cyan]/model[/bold cyan]                Switch between Gemini and Groq
-  [bold cyan]/status[/bold cyan]               Show current settings and stats
   [bold cyan]/help[/bold cyan]                 Show this help
   [bold cyan]/quit[/bold cyan]                 Exit
 
@@ -252,7 +281,7 @@ def show_help():
   [dim]# Read and analyze a log file[/dim]
   You: /read C:\\logs\\app.log
 
-  [dim]# Run a command and get explanation[/dim]
+  [dim]# Run a command and get AI explanation[/dim]
   You: /run ipconfig /all
   You: /run git status
   You: /run python -m pytest tests/
@@ -265,17 +294,22 @@ def show_help():
   You: /run python app.py
   You: /fix
 
-  [dim]# Generate a file[/dim]
+  [dim]# Generate a new file[/dim]
   You: /write utils.py
   → What should the file contain? a function to parse CSV files
 
-  [dim]# Append to an existing file[/dim]
+  [dim]# Add to an existing file[/dim]
   You: /append utils.py
   → What to add? a function to validate email addresses
 
+  [dim]# Refactor a file (AI improves it)[/dim]
+  You: /refactor C:\\dev\\project\\messy_code.py
+
+  [dim]# Generate tests for a file[/dim]
+  You: /test C:\\dev\\project\\utils.py
+
   [dim]# Search the web[/dim]
   You: /search python asyncio best practices 2026
-  You: /search how to fix CORS error in FastAPI
 
   [dim]# Explain code in plain English[/dim]
   You: /explain C:\\dev\\project\\main.py
@@ -283,37 +317,40 @@ def show_help():
   [dim]# Analyze a whole project[/dim]
   You: /project C:\\dev\\my-app
 
+  [dim]# Quick git overview[/dim]
+  You: /git
+
   [dim]# Compare files[/dim]
   You: /diff config_old.yaml config_new.yaml
+
+  [dim]# Multi-line input (paste code blocks)[/dim]
+  You: /multi
+  → (type or paste multiple lines, then type END)
 
   [dim]# Save and reuse code snippets[/dim]
   You: how do I connect to PostgreSQL in Python?
   You: /snippet postgres_connect
-  You: /snippets             (list all)
-  You: /load postgres_connect (show it again)
+  You: /snippets
+  You: /load postgres_connect
 
   [dim]# Track tasks[/dim]
   You: /todo fix the login bug
-  You: /todo refactor database module
-  You: /todo              (shows all tasks)
-  You: /todo done 1       (marks first task done)
+  You: /todo done 1
 
   [dim]# Clipboard workflow[/dim]
   You: /paste          (analyzes what you copied)
   You: /copy           (copies AI answer to clipboard)
 
-  [dim]# Streaming (see response word by word)[/dim]
-  You: /stream         (toggles on/off)
-
-  [dim]# Check current status[/dim]
-  You: /status
+  [dim]# Session info[/dim]
+  You: /stream         (toggle streaming)
+  You: /timer          (how long you've been here)
+  You: /status         (full dashboard)
+  You: /model          (switch Gemini ↔ Groq)
 
   [dim]# Conversation management[/dim]
-  You: /save            (auto-named file)
-  You: /save notes.md   (custom name)
-  You: /clear           (fresh start)
-  You: /history         (summarize conversation)
-  You: /model           (switch Gemini ↔ Groq)
+  You: /save
+  You: /clear
+  You: /history
 """)
 
 
@@ -327,7 +364,6 @@ def main():
     last_response = ""
     last_command = ""
     last_command_output = ""
-    msg_count = 0
 
     while True:
         try:
@@ -348,7 +384,6 @@ def main():
         # /clear
         if user_input.lower() == "/clear":
             messages.clear()
-            msg_count = 0
             console.print("[green]Conversation cleared.[/green]")
             continue
 
@@ -366,10 +401,17 @@ def main():
             console.print(f"[green]Streaming mode: {state}[/green]")
             continue
 
+        # /timer
+        if user_input.lower() == "/timer":
+            elapsed = time.time() - session_start
+            console.print(f"[bold]Session duration:[/bold] {format_duration(elapsed)}")
+            continue
+
         # /status
         if user_input.lower() == "/status":
             current_model = "Gemini" if use_gemini else "Groq"
             stream_state = "ON" if streaming else "OFF"
+            elapsed = format_duration(time.time() - session_start)
             console.print(f"""
 [bold]Status:[/bold]
   Model:      {current_model} (primary)
@@ -377,6 +419,7 @@ def main():
   Messages:   {len(messages)}
   Todos:      {len(todos)} ({sum(1 for t in todos if t['done'])} done)
   Snippets:   {len(snippets)}
+  Session:    {elapsed}
 """)
             continue
 
@@ -469,8 +512,27 @@ def main():
             console.print()
             continue
 
+        # /git
+        if user_input.lower() == "/git":
+            status = run_command("git status --short")
+            log = run_command("git log --oneline -5")
+            branch = run_command("git branch --show-current")
+            console.print(f"[bold]Branch:[/bold] {branch}")
+            console.print(f"[bold]Recent commits:[/bold]\n{log}")
+            console.print(f"[bold]Changes:[/bold]\n{status or '(clean)'}")
+            continue
+
+        # /multi
+        if user_input.lower() == "/multi":
+            content = get_multiline_input()
+            if content:
+                messages.append({"role": "user", "content": content})
+            else:
+                console.print("[yellow]Empty input.[/yellow]")
+                continue
+
         # /shell (run without AI analysis)
-        if user_input.startswith("/shell "):
+        elif user_input.startswith("/shell "):
             cmd = user_input[7:].strip()
             output = run_command(cmd)
             console.print(f"[dim]$ {cmd}[/dim]")
@@ -480,7 +542,7 @@ def main():
             continue
 
         # /fix
-        if user_input.lower() == "/fix":
+        elif user_input.lower() == "/fix":
             if not last_command_output:
                 console.print("[yellow]No previous command to fix. Run /run first.[/yellow]")
                 continue
@@ -519,6 +581,46 @@ def main():
             content = read_file(path)
             console.print(f"[dim]Read {len(content)} chars from {path}[/dim]")
             messages.append({"role": "user", "content": f"Explain this file in plain English. What does it do, how is it structured, and what are the key parts?\n\nFile: `{path}`\n```\n{content}\n```"})
+
+        # /refactor
+        elif user_input.startswith("/refactor "):
+            path = user_input[10:].strip()
+            content = read_file(path)
+            if content.startswith("Error"):
+                console.print(f"[red]{content}[/red]")
+                continue
+            console.print(f"[dim]Read {len(content)} chars from {path}[/dim]")
+            messages.append({"role": "user", "content": f"Refactor and improve this file. Fix code smells, improve naming, add comments, optimize where possible. Keep the same functionality.\n\nFile: `{path}`\n```\n{content}\n```\nRespond with ONLY the improved file content, no explanation or markdown fences."})
+            with console.status("[bold green]Refactoring...[/bold green]"):
+                response = get_response(messages)
+            messages.append({"role": "assistant", "content": response})
+            last_response = response
+            # Save backup
+            backup = path + ".bak"
+            Path(backup).write_text(content, encoding="utf-8")
+            Path(path).write_text(response, encoding="utf-8")
+            console.print(f"[green]Refactored {path} (backup: {backup})[/green]")
+            console.print(Markdown(f"```\n{response[:500]}\n```"))
+            continue
+
+        # /test
+        elif user_input.startswith("/test "):
+            path = user_input[6:].strip()
+            content = read_file(path)
+            if content.startswith("Error"):
+                console.print(f"[red]{content}[/red]")
+                continue
+            console.print(f"[dim]Read {len(content)} chars from {path}[/dim]")
+            test_path = Path(path).stem + "_test.py"
+            messages.append({"role": "user", "content": f"Generate unit tests (using pytest) for this file:\n\nFile: `{path}`\n```\n{content}\n```\nRespond with ONLY the test file content, no explanation or markdown fences."})
+            with console.status("[bold green]Generating tests...[/bold green]"):
+                response = get_response(messages)
+            messages.append({"role": "assistant", "content": response})
+            last_response = response
+            Path(test_path).write_text(response, encoding="utf-8")
+            console.print(f"[green]Tests written to {test_path}[/green]")
+            console.print(Markdown(f"```\n{response[:500]}\n```"))
+            continue
 
         # /diff
         elif user_input.startswith("/diff "):
@@ -597,7 +699,6 @@ def main():
 
         messages.append({"role": "assistant", "content": response})
         last_response = response
-        msg_count += 1
 
 
 if __name__ == "__main__":

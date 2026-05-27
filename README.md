@@ -9,16 +9,21 @@ A CLI-based AI assistant powered by Google Gemini and Groq (with automatic fallb
 - **File analysis** — Read and analyze any file
 - **Code generation** — Generate and save code to files
 - **Append to files** — Add AI-generated content to existing files
+- **Refactoring** — AI rewrites your code with improvements (keeps a backup)
+- **Test generation** — Auto-generate pytest unit tests for any file
 - **Web search** — DuckDuckGo search (free, no key needed)
 - **Command execution** — Run shell commands and get AI analysis
 - **Silent commands** — Run commands without AI analysis
 - **Auto-fix** — Fix errors from failed commands automatically
+- **Git overview** — Quick branch, status, and recent commits view
 - **Project overview** — Scan an entire folder and get a tech stack summary
 - **File comparison** — Diff two files with AI explanation
 - **Code explanation** — Get plain English explanations of any file
+- **Multi-line input** — Paste code blocks or long text
 - **Clipboard integration** — Paste to analyze, copy responses
 - **Snippet library** — Save, list, and reuse useful AI responses
 - **Task tracking** — Built-in todo list to track work
+- **Session timer** — Track how long you've been working
 - **Status dashboard** — See current settings and session stats
 - **Conversation management** — Save, clear, summarize history
 
@@ -47,7 +52,7 @@ Get free keys from:
 python agent.py
 ```
 
-### All Commands
+### All Commands (27 total)
 
 | Command | Description |
 |---------|-------------|
@@ -56,12 +61,16 @@ python agent.py
 | `/shell <cmd>` | Run a command silently (no AI analysis) |
 | `/write <path>` | Generate content and save to file |
 | `/append <path>` | Append AI-generated content to existing file |
+| `/refactor <path>` | AI rewrites file with improvements (saves .bak backup) |
+| `/test <path>` | Generate pytest unit tests for a file |
 | `/search <query>` | Search the web (DuckDuckGo) |
 | `/explain <path>` | Explain a file in plain English |
 | `/project <path>` | Analyze an entire project folder |
 | `/fix` | Auto-fix the last failed command |
+| `/git` | Quick git status, branch, and recent commits |
 | `/paste` | Analyze clipboard contents |
 | `/copy` | Copy last AI response to clipboard |
+| `/multi` | Enter multi-line input mode (type END to finish) |
 | `/diff <f1> <f2>` | Compare two files |
 | `/snippet <name>` | Save last response as a named snippet |
 | `/snippets` | List all saved snippets |
@@ -70,6 +79,7 @@ python agent.py
 | `/todo done <n>` | Mark task #n as done |
 | `/history` | Show conversation summary |
 | `/stream` | Toggle streaming mode (word by word) |
+| `/timer` | Show how long you've been in this session |
 | `/status` | Show current settings and session stats |
 | `/save [path]` | Save conversation to markdown |
 | `/clear` | Clear conversation history |
@@ -95,7 +105,6 @@ You: /run python -m pytest tests/
 # Run a command silently (just execute, no AI)
 You: /shell mkdir new_folder
 You: /shell pip install requests
-You: /shell cls
 
 # Fix a failed command automatically
 You: /run python app.py
@@ -109,6 +118,12 @@ You: /write utils.py
 You: /append utils.py
 → What to add? a function to validate email addresses
 
+# Refactor messy code (saves backup as .bak)
+You: /refactor C:\dev\project\messy_code.py
+
+# Generate unit tests
+You: /test C:\dev\project\utils.py
+
 # Search the web
 You: /search python asyncio best practices 2026
 You: /search how to fix CORS error in FastAPI
@@ -119,8 +134,15 @@ You: /explain C:\dev\project\main.py
 # Analyze a whole project
 You: /project C:\dev\my-app
 
+# Quick git overview
+You: /git
+
 # Compare files
 You: /diff config_old.yaml config_new.yaml
+
+# Multi-line input (paste code blocks)
+You: /multi
+→ (type or paste multiple lines, then type END)
 
 # Save and reuse code snippets
 You: how do I connect to PostgreSQL in Python?
@@ -138,18 +160,17 @@ You: /todo done 1       (marks first task done)
 You: /paste       (analyzes what you copied)
 You: /copy        (copies AI answer to clipboard)
 
-# Toggle streaming (see response word by word)
-You: /stream
-
-# Check session status
-You: /status
+# Session info
+You: /stream      (toggle streaming on/off)
+You: /timer       (how long you've been here)
+You: /status      (full dashboard)
+You: /model       (switch Gemini ↔ Groq)
 
 # Conversation management
 You: /save            (auto-named file)
 You: /save notes.md   (custom name)
 You: /clear           (fresh start)
 You: /history         (summarize conversation)
-You: /model           (switch Gemini ↔ Groq)
 ```
 
 ## How It Works
