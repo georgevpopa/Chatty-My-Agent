@@ -107,7 +107,6 @@ def web_search(query: str) -> str:
 
 
 def clipboard_copy(text: str):
-    """Copy text to clipboard."""
     try:
         subprocess.run("clip", input=text.encode("utf-8"), check=True)
         return True
@@ -116,7 +115,6 @@ def clipboard_copy(text: str):
 
 
 def clipboard_paste() -> str:
-    """Get clipboard contents."""
     try:
         result = subprocess.run(
             ["powershell", "-command", "Get-Clipboard"],
@@ -140,30 +138,80 @@ def save_conversation(messages: list[dict], path: str = None):
 
 def show_help():
     console.print("""
-[bold]Commands:[/bold]
-  /read <path>      Read a file and analyze it
-  /run <cmd>        Run a command and analyze output
-  /write <path>     Ask AI to generate code, then save to file
-  /search <query>   Search the web (DuckDuckGo)
-  /paste            Analyze clipboard contents
-  /copy             Copy last AI response to clipboard
-  /diff <f1> <f2>   Compare two files
-  /save [path]      Save conversation to a file
-  /clear            Clear conversation history
-  /model            Switch between Gemini and Groq
-  /help             Show this help
-  /quit             Exit
+[bold green]━━━ Chatty-My-Agent Help ━━━[/bold green]
+
+[bold]COMMANDS:[/bold]
+
+  [bold cyan]/read <path>[/bold cyan]        Read a file and get AI analysis
+  [bold cyan]/run <cmd>[/bold cyan]          Run a shell command and analyze output
+  [bold cyan]/write <path>[/bold cyan]       Generate code/content and save to file
+  [bold cyan]/search <query>[/bold cyan]     Search the web (DuckDuckGo, free)
+  [bold cyan]/explain <path>[/bold cyan]     Explain a file in plain English
+  [bold cyan]/fix[/bold cyan]                Auto-fix the last error from /run
+  [bold cyan]/paste[/bold cyan]              Analyze clipboard contents
+  [bold cyan]/copy[/bold cyan]               Copy last AI response to clipboard
+  [bold cyan]/diff <f1> <f2>[/bold cyan]     Compare two files
+  [bold cyan]/history[/bold cyan]            Show conversation summary
+  [bold cyan]/save [path][/bold cyan]        Save conversation to markdown
+  [bold cyan]/clear[/bold cyan]              Clear conversation history
+  [bold cyan]/model[/bold cyan]              Switch between Gemini and Groq
+  [bold cyan]/help[/bold cyan]              Show this help
+  [bold cyan]/quit[/bold cyan]               Exit
+
+[bold]EXAMPLES:[/bold]
+
+  [dim]# Ask any tech question[/dim]
+  You: what is a REST API?
+  You: write a Python function to sort a list of dicts by key
+
+  [dim]# Read and analyze a log file[/dim]
+  You: /read C:\\logs\\app.log
+
+  [dim]# Run a command and get explanation[/dim]
+  You: /run ipconfig /all
+  You: /run git status
+  You: /run python -m pytest tests/
+
+  [dim]# Fix the last failed command[/dim]
+  You: /run python app.py
+  You: /fix
+
+  [dim]# Generate a file[/dim]
+  You: /write utils.py
+  → What should the file contain? a function to parse CSV files
+
+  [dim]# Search the web[/dim]
+  You: /search python asyncio best practices 2026
+  You: /search how to fix CORS error in FastAPI
+
+  [dim]# Explain code[/dim]
+  You: /explain C:\\dev\\project\\main.py
+
+  [dim]# Compare files[/dim]
+  You: /diff config_old.yaml config_new.yaml
+
+  [dim]# Clipboard workflow[/dim]
+  You: /paste          (analyzes what you copied)
+  You: /copy           (copies AI answer to clipboard)
+
+  [dim]# Conversation management[/dim]
+  You: /save            (auto-named file)
+  You: /save notes.md   (custom name)
+  You: /clear           (fresh start)
+  You: /model           (switch Gemini ↔ Groq)
 """)
 
 
 def main():
     global use_gemini
     console.print("[bold green]Chatty-My-Agent[/bold green] — Tech assistant (Gemini + Groq)")
-    console.print("Type [bold]/help[/bold] for commands")
+    console.print("Type [bold]/help[/bold] for commands, or just ask a question")
     console.print("---")
 
     messages = []
     last_response = ""
+    last_command = ""
+    last_command_output = ""
 
     while True:
         try:
@@ -213,8 +261,30 @@ def main():
                 console.print("[yellow]No response to copy yet.[/yellow]")
             continue
 
+        # /history
+        if user_input.lower() == "/history":
+            if not messages:
+                console.print("[yellow]No conversation yet.[/yellow]")
+                continue
+            console.print(f"[dim]{len(messages)} messages in history[/dim]")
+            messages.append({"role": "user", "content": "Summarize our conversation so far in bullet points. Be brief."})
+            with console.status("[bold green]Summarizing...[/bold green]"):
+                response = get_response(messages)
+            messages.pop()  # remove the summary request from history
+            console.print()
+            console.print(Markdown(response))
+            console.print()
+            continue
+
+        # /fix
+        if user_input.lower() == "/fix":
+            if not last_command_output:
+                console.print("[yellow]No previous command to fix. Run /run first.[/yellow]")
+                continue
+            messages.append({"role": "user", "content": f"The command `{last_command}` failed with:\n```\n{last_command_output}\n```\nWhat's wrong and how do I fix it? Give me the corrected command or code."})
+
         # /paste
-        if user_input.lower() == "/paste":
+        elif user_input.lower() == "/paste":
             content = clipboard_paste()
             if content:
                 console.print(f"[dim]Clipboard: {content[:100]}...[/dim]")
@@ -231,6 +301,13 @@ def main():
                 results = web_search(query)
             console.print(Markdown(results))
             messages.append({"role": "user", "content": f"I searched for '{query}' and got:\n{results}\nSummarize the key findings."})
+
+        # /explain
+        elif user_input.startswith("/explain "):
+            path = user_input[9:].strip()
+            content = read_file(path)
+            console.print(f"[dim]Read {len(content)} chars from {path}[/dim]")
+            messages.append({"role": "user", "content": f"Explain this file in plain English. What does it do, how is it structured, and what are the key parts?\n\nFile: `{path}`\n```\n{content}\n```"})
 
         # /diff
         elif user_input.startswith("/diff "):
@@ -252,6 +329,8 @@ def main():
         elif user_input.startswith("/run "):
             cmd = user_input[5:].strip()
             output = run_command(cmd)
+            last_command = cmd
+            last_command_output = output
             console.print(f"[dim]$ {cmd}[/dim]")
             console.print(f"[dim]{output[:500]}[/dim]")
             messages.append({"role": "user", "content": f"I ran `{cmd}` and got:\n```\n{output}\n```\nAnalyze this output."})

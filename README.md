@@ -6,9 +6,13 @@ A CLI-based AI assistant powered by Google Gemini and Groq (with automatic fallb
 
 - **Dual LLM support** — Gemini 2.0 Flash (primary) + Groq Llama 3.3 70B (fallback)
 - **File analysis** — Read and analyze any file
-- **Command execution** — Run shell commands and get AI analysis of output
 - **Code generation** — Generate and save code to files
-- **Conversation saving** — Export chats to markdown
+- **Web search** — DuckDuckGo search (free, no key needed)
+- **Command execution** — Run shell commands and get AI analysis
+- **Auto-fix** — Fix errors from failed commands
+- **File comparison** — Diff two files with AI explanation
+- **Clipboard integration** — Paste to analyze, copy responses
+- **Conversation management** — Save, clear, summarize history
 
 ## Setup
 
@@ -42,19 +46,53 @@ python agent.py
 | `/read <path>` | Read a file and analyze it |
 | `/run <cmd>` | Run a command and analyze output |
 | `/write <path>` | Generate content and save to file |
+| `/search <query>` | Search the web (DuckDuckGo) |
+| `/explain <path>` | Explain a file in plain English |
+| `/fix` | Auto-fix the last failed command |
+| `/paste` | Analyze clipboard contents |
+| `/copy` | Copy last AI response to clipboard |
+| `/diff <f1> <f2>` | Compare two files |
+| `/history` | Show conversation summary |
 | `/save [path]` | Save conversation to markdown |
 | `/clear` | Clear conversation history |
 | `/model` | Switch between Gemini and Groq |
-| `/help` | Show all commands |
+| `/help` | Show help with examples |
 | `/quit` | Exit |
 
 ### Examples
 
-```
-You: explain what a decorator is in Python
+```bash
+# Ask any tech question
+You: what is a REST API?
+You: write a Python function to sort a list of dicts by key
+
+# Read and analyze a log file
 You: /read C:\logs\app.log
-You: /run netstat -an
+
+# Run a command and get explanation
+You: /run ipconfig /all
+You: /run git status
+
+# Fix a failed command
+You: /run python app.py
+You: /fix
+
+# Generate a file
 You: /write utils.py
+→ What should the file contain? a function to parse CSV files
+
+# Search the web
+You: /search python asyncio best practices 2026
+
+# Explain code
+You: /explain C:\dev\project\main.py
+
+# Compare files
+You: /diff config_old.yaml config_new.yaml
+
+# Clipboard workflow
+You: /paste       (analyzes what you copied)
+You: /copy        (copies AI answer to clipboard)
 ```
 
 ## Requirements
