@@ -40,13 +40,13 @@ HTML = """
 </head>
 <body>
     <div id="header">
-        <pre style="color:#4ecca3;font-size:0.6em;line-height:1.2;margin:0;">  ╔═══╗
-  ║■ ■║  Chatty
-  ║ ▽ ║  Your Friendly Assistant
-  ╚╦═╦╝/
-  ╔╩═╩╗
-  ║   ║
-  ╚╦ ╦╝</pre>
+        <pre style="color:#4ecca3;font-family:'Courier New',monospace;font-size:12px;line-height:1.3;margin:0;display:inline-block;text-align:left;">╔═══╗
+║■ ■║  Chatty
+║ ▽ ║  Your Friendly Assistant
+╚╦═╦╝/
+╔╩═╩╗
+║   ║
+╚╦ ╦╝</pre>
     </div>
     <div id="chat"></div>
     <div id="input-area">
