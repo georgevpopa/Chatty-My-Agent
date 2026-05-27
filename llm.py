@@ -1,22 +1,23 @@
 import os
 from dotenv import load_dotenv
+from storage import PERSONAS
 
 load_dotenv()
 
-SYSTEM_PROMPT = """You are a helpful technical assistant. You can:
-- Write and explain code
-- Analyze logs and errors
-- Answer technical questions
-- Suggest solutions to problems
-- Search the web for current information
 
-Be concise and direct. Use code blocks for code."""
+def get_system_prompt(persona: str = "default", memory: list[str] = None) -> str:
+    base = PERSONAS.get(persona, PERSONAS["default"])
+    if memory:
+        facts = "\n".join(f"- {m}" for m in memory)
+        base += f"\n\nThings you remember about the user:\n{facts}"
+    return base
 
 
-def call_gemini(messages: list[dict]) -> str:
+def call_gemini(messages: list[dict], persona: str = "default", memory: list[str] = None) -> str:
     import google.generativeai as genai
     genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-    model = genai.GenerativeModel("gemini-2.0-flash")
+    system = get_system_prompt(persona, memory)
+    model = genai.GenerativeModel("gemini-2.0-flash", system_instruction=system)
     history = []
     for msg in messages[:-1]:
         role = "user" if msg["role"] == "user" else "model"
@@ -26,10 +27,11 @@ def call_gemini(messages: list[dict]) -> str:
     return response.text
 
 
-def call_groq(messages: list[dict]) -> str:
+def call_groq(messages: list[dict], persona: str = "default", memory: list[str] = None) -> str:
     from groq import Groq
     client = Groq(api_key=os.getenv("GROQ_API_KEY"))
-    groq_messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    system = get_system_prompt(persona, memory)
+    groq_messages = [{"role": "system", "content": system}]
     groq_messages.extend(messages)
     response = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
@@ -38,10 +40,11 @@ def call_groq(messages: list[dict]) -> str:
     return response.choices[0].message.content
 
 
-def call_gemini_stream(messages: list[dict]):
+def call_gemini_stream(messages: list[dict], persona: str = "default", memory: list[str] = None):
     import google.generativeai as genai
     genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-    model = genai.GenerativeModel("gemini-2.0-flash")
+    system = get_system_prompt(persona, memory)
+    model = genai.GenerativeModel("gemini-2.0-flash", system_instruction=system)
     history = []
     for msg in messages[:-1]:
         role = "user" if msg["role"] == "user" else "model"
@@ -53,10 +56,11 @@ def call_gemini_stream(messages: list[dict]):
             yield chunk.text
 
 
-def call_groq_stream(messages: list[dict]):
+def call_groq_stream(messages: list[dict], persona: str = "default", memory: list[str] = None):
     from groq import Groq
     client = Groq(api_key=os.getenv("GROQ_API_KEY"))
-    groq_messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    system = get_system_prompt(persona, memory)
+    groq_messages = [{"role": "system", "content": system}]
     groq_messages.extend(messages)
     response = client.chat.completions.create(
         model="llama-3.3-70b-versatile",

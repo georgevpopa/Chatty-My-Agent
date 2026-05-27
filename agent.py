@@ -2,6 +2,7 @@ import os
 import sys
 import json
 import time
+import random
 from pathlib import Path
 from datetime import datetime
 from rich.console import Console
@@ -9,11 +10,25 @@ from rich.markdown import Markdown
 from rich.theme import Theme
 
 from llm import call_gemini, call_groq, call_gemini_stream, call_groq_stream
-from tools import read_file, run_command, web_search, scan_project, clipboard_copy, clipboard_paste
-from storage import load_config, save_config, load_aliases, save_aliases, save_history, load_history
+from tools import read_file, run_command, web_search, scan_project, clipboard_copy, clipboard_paste, fetch_url, check_port, docker_status, docker_logs
+from storage import (load_config, save_config, load_aliases, save_aliases, save_history, load_history,
+                     load_memory, add_memory, clear_memory, load_stats, update_stats, PERSONAS)
 from help_text import show_help
 from plugins import list_plugins, run_plugin, create_example_plugin
 from autonomous import run_autonomous
+
+TIPS = [
+    "💡 Use /context to pin files the AI should always know about.",
+    "💡 Use /agent to let the AI run commands autonomously.",
+    "💡 Use /snippet to save useful responses for later.",
+    "💡 Use /alias to create shortcuts for commands you use often.",
+    "💡 Use /multi to paste multi-line code blocks.",
+    "💡 Use /fix after a failed /run to get a fix suggestion.",
+    "💡 Use /chain to run a command and give AI custom instructions.",
+    "💡 Use /persona to switch AI personality (senior_dev, eli5, reviewer).",
+    "💡 Use /learn to teach the AI facts it remembers across sessions.",
+    "💡 Use /refactor to improve code quality automatically.",
+]
 
 THEMES = {
     "dark": Theme({"info": "dim cyan", "warning": "yellow", "error": "bold red"}),
@@ -27,9 +42,12 @@ console = Console(theme=THEMES.get(config.get("theme", "dark")))
 # State
 use_gemini = config.get("model", "gemini") == "gemini"
 streaming = config.get("streaming", True)
+persona = config.get("persona", "default")
 todos = []
 snippets = {}
+bookmarks = []
 aliases = load_aliases()
+memory = load_memory()
 pinned_context = []
 undo_stack = []  # (path, original_content)
 session_start = time.time()
@@ -44,20 +62,20 @@ def get_response(messages: list[dict]) -> str:
     global use_gemini
     if use_gemini:
         try:
-            return call_gemini(messages)
+            return call_gemini(messages, persona, memory)
         except Exception as e:
             console.print(f"[warning]Gemini failed ({e}), falling back to Groq...[/warning]")
             try:
-                return call_groq(messages)
+                return call_groq(messages, persona, memory)
             except Exception as e2:
                 return f"Both providers failed.\nGemini: {e}\nGroq: {e2}"
     else:
         try:
-            return call_groq(messages)
+            return call_groq(messages, persona, memory)
         except Exception as e:
             console.print(f"[warning]Groq failed ({e}), falling back to Gemini...[/warning]")
             try:
-                return call_gemini(messages)
+                return call_gemini(messages, persona, memory)
             except Exception as e2:
                 return f"Both providers failed.\nGroq: {e}\nGemini: {e2}"
 
@@ -66,7 +84,7 @@ def get_response_stream(messages: list[dict]) -> str:
     global use_gemini
     full = ""
     try:
-        stream = call_gemini_stream(messages) if use_gemini else call_groq_stream(messages)
+        stream = call_gemini_stream(messages, persona, memory) if use_gemini else call_groq_stream(messages, persona, memory)
         for chunk in stream:
             print(chunk, end="", flush=True)
             full += chunk
@@ -75,7 +93,7 @@ def get_response_stream(messages: list[dict]) -> str:
     except Exception as e:
         console.print(f"\n[warning]Stream failed ({e}), trying fallback...[/warning]")
         try:
-            stream = call_groq_stream(messages) if use_gemini else call_gemini_stream(messages)
+            stream = call_groq_stream(messages, persona, memory) if use_gemini else call_gemini_stream(messages, persona, memory)
             for chunk in stream:
                 print(chunk, end="", flush=True)
                 full += chunk
@@ -145,10 +163,11 @@ def save_conversation(messages: list[dict], path: str = None):
 
 
 def main():
-    global use_gemini, streaming, todos, snippets, aliases, pinned_context, undo_stack, token_estimate, config
+    global use_gemini, streaming, todos, snippets, aliases, pinned_context, undo_stack, token_estimate, config, persona, memory, bookmarks
 
     console.print("[bold green]Chatty-My-Agent[/bold green] — Tech assistant (Gemini + Groq)")
     console.print("Type [bold]/help[/bold] for commands, or just ask a question")
+    console.print(f"[dim]{random.choice(TIPS)}[/dim]")
     console.print("---")
 
     messages = []
@@ -166,6 +185,7 @@ def main():
             continue
         if user_input.lower() in ("/quit", "/exit", "quit", "exit"):
             save_history(messages)
+            update_stats(len(messages), token_estimate)
             break
 
         # Check aliases
@@ -619,6 +639,124 @@ def main():
                 f.write("\n" + response)
             console.print(f"[green]Appended to {path}[/green]")
             console.print(Markdown(f"```\n{response[:500]}\n```"))
+            continue
+
+        # /retry
+        elif user_input.lower() == "/retry":
+            if messages and messages[-1]["role"] == "assistant":
+                messages.pop()  # remove last response
+                # re-run with same user message
+            else:
+                console.print("[yellow]Nothing to retry.[/yellow]")
+                continue
+
+        # /bookmark
+        elif user_input.lower() == "/bookmark":
+            if last_response:
+                bookmarks.append({"time": datetime.now().strftime("%H:%M"), "content": last_response[:200]})
+                console.print(f"[green]Bookmarked (#{len(bookmarks)})[/green]")
+            else:
+                console.print("[yellow]No response to bookmark.[/yellow]")
+            continue
+
+        # /bookmarks
+        elif user_input.lower() == "/bookmarks":
+            if not bookmarks:
+                console.print("[yellow]No bookmarks yet.[/yellow]")
+            else:
+                for i, b in enumerate(bookmarks, 1):
+                    console.print(f"  [bold cyan]#{i}[/bold cyan] [{b['time']}] {b['content'][:80]}...")
+            continue
+
+        # /persona
+        elif user_input.lower().startswith("/persona"):
+            args = user_input[8:].strip()
+            if not args:
+                console.print(f"[bold]Current:[/bold] {persona}")
+                console.print(f"[dim]Available: {', '.join(PERSONAS.keys())}[/dim]")
+            elif args in PERSONAS:
+                persona = args
+                config["persona"] = persona
+                save_config(config)
+                console.print(f"[green]Persona set to '{persona}'[/green]")
+            else:
+                console.print(f"[red]Unknown persona. Available: {', '.join(PERSONAS.keys())}[/red]")
+            continue
+
+        # /learn
+        elif user_input.startswith("/learn "):
+            fact = user_input[7:].strip()
+            add_memory(fact)
+            memory.append(fact)
+            console.print(f"[green]Remembered: {fact}[/green]")
+            continue
+
+        # /memory
+        elif user_input.lower() == "/memory":
+            if not memory:
+                console.print("[yellow]No memories. Use /learn <fact>[/yellow]")
+            else:
+                for i, m in enumerate(memory, 1):
+                    console.print(f"  {i}. {m}")
+            continue
+
+        # /forget
+        elif user_input.lower() == "/forget":
+            clear_memory()
+            memory.clear()
+            console.print("[green]All memories cleared.[/green]")
+            continue
+
+        # /http
+        elif user_input.startswith("/http "):
+            url = user_input[6:].strip()
+            console.print(f"[dim]Fetching: {url}[/dim]")
+            content = fetch_url(url)
+            console.print(f"[dim]Got {len(content)} chars[/dim]")
+            messages.append({"role": "user", "content": f"I fetched {url} and got:\n```\n{content}\n```\nAnalyze this content."})
+
+        # /port
+        elif user_input.startswith("/port "):
+            port = user_input[6:].strip()
+            try:
+                result = check_port(int(port))
+                console.print(result)
+            except ValueError:
+                console.print("[red]Usage: /port <number>[/red]")
+            continue
+
+        # /docker
+        elif user_input.lower() == "/docker":
+            result = docker_status()
+            console.print(result)
+            continue
+
+        # /docker-logs
+        elif user_input.startswith("/docker-logs "):
+            container = user_input[13:].strip()
+            logs = docker_logs(container)
+            console.print(f"[dim]{logs[:500]}[/dim]")
+            messages.append({"role": "user", "content": f"Docker logs for '{container}':\n```\n{logs}\n```\nAnalyze these logs."})
+
+        # /env
+        elif user_input.lower() == "/env":
+            safe_env = {k: ("***" if any(s in k.lower() for s in ["key", "secret", "token", "pass"]) else v)
+                       for k, v in os.environ.items()}
+            env_str = "\n".join(f"  {k}={v}" for k, v in sorted(safe_env.items())[:30])
+            console.print(f"[dim]Environment (secrets masked):\n{env_str}[/dim]")
+            continue
+
+        # /stats
+        elif user_input.lower() == "/stats":
+            stats = load_stats()
+            console.print(f"""
+[bold]Lifetime Stats:[/bold]
+  Sessions:    {stats.get('sessions', 0)}
+  Messages:    {stats.get('messages', 0):,}
+  Tokens:      ~{stats.get('tokens', 0):,}
+  First use:   {stats.get('first_use', 'N/A')}
+  Last use:    {stats.get('last_use', 'N/A')}
+""")
             continue
 
         # /voice

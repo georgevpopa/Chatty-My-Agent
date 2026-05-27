@@ -1,4 +1,6 @@
 import subprocess
+import socket
+import urllib.request
 from pathlib import Path
 
 
@@ -33,6 +35,16 @@ def web_search(query: str) -> str:
         return output.strip()
     except Exception as e:
         return f"Search error: {e}"
+
+
+def fetch_url(url: str) -> str:
+    """Fetch a URL and return its text content."""
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Chatty-Agent/1.0"})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return resp.read().decode("utf-8", errors="replace")[:5000]
+    except Exception as e:
+        return f"Error fetching URL: {e}"
 
 
 def scan_project(path: str) -> str:
@@ -71,5 +83,46 @@ def clipboard_paste() -> str:
             capture_output=True, text=True, timeout=5
         )
         return result.stdout.strip()
+    except Exception as e:
+        return f"Error: {e}"
+
+
+def check_port(port: int) -> str:
+    """Check what's running on a port."""
+    try:
+        result = subprocess.run(
+            f"netstat -ano | findstr :{port}",
+            shell=True, capture_output=True, text=True, timeout=5
+        )
+        output = result.stdout.strip()
+        if output:
+            return f"Port {port} is in use:\n{output}"
+        return f"Port {port} is free."
+    except Exception as e:
+        return f"Error: {e}"
+
+
+def docker_status() -> str:
+    """Get docker container status."""
+    try:
+        result = subprocess.run(
+            "docker ps --format \"{{.Names}}\t{{.Status}}\t{{.Ports}}\"",
+            shell=True, capture_output=True, text=True, timeout=10
+        )
+        if result.returncode != 0:
+            return f"Docker error: {result.stderr.strip()}"
+        return result.stdout.strip() or "No running containers."
+    except Exception as e:
+        return f"Error: {e}"
+
+
+def docker_logs(container: str, lines: int = 50) -> str:
+    """Get docker container logs."""
+    try:
+        result = subprocess.run(
+            f"docker logs --tail {lines} {container}",
+            shell=True, capture_output=True, text=True, timeout=10
+        )
+        return (result.stdout + result.stderr).strip() or "(no logs)"
     except Exception as e:
         return f"Error: {e}"
