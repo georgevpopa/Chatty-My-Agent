@@ -16,6 +16,7 @@ SYSTEM_PROMPT = """You are a helpful technical assistant. You can:
 - Analyze logs and errors
 - Answer technical questions
 - Suggest solutions to problems
+- Search the web for current information
 
 Be concise and direct. Use code blocks for code."""
 
@@ -89,6 +90,43 @@ def run_command(cmd: str) -> str:
         return f"Error: {e}"
 
 
+def web_search(query: str) -> str:
+    """Search the web using DuckDuckGo (no API key needed)."""
+    try:
+        from duckduckgo_search import DDGS
+        with DDGS() as ddgs:
+            results = list(ddgs.text(query, max_results=5))
+        if not results:
+            return "No results found."
+        output = ""
+        for r in results:
+            output += f"**{r['title']}**\n{r['href']}\n{r['body']}\n\n"
+        return output.strip()
+    except Exception as e:
+        return f"Search error: {e}"
+
+
+def clipboard_copy(text: str):
+    """Copy text to clipboard."""
+    try:
+        subprocess.run("clip", input=text.encode("utf-8"), check=True)
+        return True
+    except Exception:
+        return False
+
+
+def clipboard_paste() -> str:
+    """Get clipboard contents."""
+    try:
+        result = subprocess.run(
+            ["powershell", "-command", "Get-Clipboard"],
+            capture_output=True, text=True, timeout=5
+        )
+        return result.stdout.strip()
+    except Exception as e:
+        return f"Error: {e}"
+
+
 def save_conversation(messages: list[dict], path: str = None):
     if not path:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -103,24 +141,29 @@ def save_conversation(messages: list[dict], path: str = None):
 def show_help():
     console.print("""
 [bold]Commands:[/bold]
-  /read <path>    Read a file and analyze it
-  /run <cmd>      Run a command and analyze output
-  /write <path>   Ask AI to generate code, then save to file
-  /save [path]    Save conversation to a file
-  /clear          Clear conversation history
-  /model          Switch between Gemini and Groq
-  /help           Show this help
-  /quit           Exit
+  /read <path>      Read a file and analyze it
+  /run <cmd>        Run a command and analyze output
+  /write <path>     Ask AI to generate code, then save to file
+  /search <query>   Search the web (DuckDuckGo)
+  /paste            Analyze clipboard contents
+  /copy             Copy last AI response to clipboard
+  /diff <f1> <f2>   Compare two files
+  /save [path]      Save conversation to a file
+  /clear            Clear conversation history
+  /model            Switch between Gemini and Groq
+  /help             Show this help
+  /quit             Exit
 """)
 
 
 def main():
     global use_gemini
-    console.print("[bold green]My-Agent[/bold green] — Tech assistant (Gemini + Groq)")
+    console.print("[bold green]Chatty-My-Agent[/bold green] — Tech assistant (Gemini + Groq)")
     console.print("Type [bold]/help[/bold] for commands")
     console.print("---")
 
     messages = []
+    last_response = ""
 
     while True:
         try:
@@ -159,8 +202,47 @@ def main():
             console.print(f"[green]Saved to {saved}[/green]")
             continue
 
+        # /copy
+        if user_input.lower() == "/copy":
+            if last_response:
+                if clipboard_copy(last_response):
+                    console.print("[green]Copied last response to clipboard.[/green]")
+                else:
+                    console.print("[red]Failed to copy.[/red]")
+            else:
+                console.print("[yellow]No response to copy yet.[/yellow]")
+            continue
+
+        # /paste
+        if user_input.lower() == "/paste":
+            content = clipboard_paste()
+            if content:
+                console.print(f"[dim]Clipboard: {content[:100]}...[/dim]")
+                messages.append({"role": "user", "content": f"Analyze this from my clipboard:\n```\n{content}\n```"})
+            else:
+                console.print("[yellow]Clipboard is empty.[/yellow]")
+                continue
+
+        # /search
+        elif user_input.startswith("/search "):
+            query = user_input[8:].strip()
+            console.print(f"[dim]Searching: {query}[/dim]")
+            with console.status("[bold green]Searching...[/bold green]"):
+                results = web_search(query)
+            console.print(Markdown(results))
+            messages.append({"role": "user", "content": f"I searched for '{query}' and got:\n{results}\nSummarize the key findings."})
+
+        # /diff
+        elif user_input.startswith("/diff "):
+            parts = user_input[6:].strip().split()
+            if len(parts) < 2:
+                console.print("[red]Usage: /diff <file1> <file2>[/red]")
+                continue
+            f1, f2 = read_file(parts[0]), read_file(parts[1])
+            messages.append({"role": "user", "content": f"Compare these two files:\n\n**{parts[0]}:**\n```\n{f1}\n```\n\n**{parts[1]}:**\n```\n{f2}\n```\nHighlight the differences and explain them."})
+
         # /read
-        if user_input.startswith("/read "):
+        elif user_input.startswith("/read "):
             path = user_input[6:].strip()
             content = read_file(path)
             console.print(f"[dim]Read {len(content)} chars from {path}[/dim]")
@@ -182,6 +264,7 @@ def main():
             with console.status("[bold green]Generating...[/bold green]"):
                 response = get_response(messages)
             messages.append({"role": "assistant", "content": response})
+            last_response = response
             Path(path).parent.mkdir(parents=True, exist_ok=True)
             Path(path).write_text(response, encoding="utf-8")
             console.print(f"[green]Written to {path}[/green]")
@@ -196,6 +279,7 @@ def main():
             response = get_response(messages)
 
         messages.append({"role": "assistant", "content": response})
+        last_response = response
         console.print()
         console.print(Markdown(response))
         console.print()
