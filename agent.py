@@ -7,7 +7,6 @@ from datetime import datetime
 from dotenv import load_dotenv
 from rich.console import Console
 from rich.markdown import Markdown
-from rich.syntax import Syntax
 
 load_dotenv()
 console = Console()
@@ -20,6 +19,12 @@ SYSTEM_PROMPT = """You are a helpful technical assistant. You can:
 - Search the web for current information
 
 Be concise and direct. Use code blocks for code."""
+
+# State
+use_gemini = True
+streaming = True
+todos = []
+snippets = {}
 
 
 def call_gemini(messages: list[dict]) -> str:
@@ -75,12 +80,6 @@ def call_groq_stream(messages: list[dict]):
     for chunk in response:
         if chunk.choices[0].delta.content:
             yield chunk.choices[0].delta.content
-
-
-# State
-use_gemini = True
-streaming = True
-todos = []
 
 
 def get_response(messages: list[dict]) -> str:
@@ -162,15 +161,12 @@ def web_search(query: str) -> str:
 
 
 def scan_project(path: str) -> str:
-    """Scan a project directory and return structure + key files."""
     p = Path(path)
     if not p.is_dir():
         return f"Error: {path} is not a directory"
-    
     ignore = {".git", "__pycache__", "node_modules", ".venv", "venv", ".env", "dist", "build"}
     lines = []
     file_count = 0
-    
     for item in sorted(p.rglob("*")):
         if any(part in ignore for part in item.parts):
             continue
@@ -182,7 +178,6 @@ def scan_project(path: str) -> str:
             if file_count > 50:
                 lines.append("  ... (truncated, too many files)")
                 break
-    
     return f"Project: {path}\nFiles ({file_count}):\n" + "\n".join(lines)
 
 
@@ -222,25 +217,31 @@ def show_help():
 
 [bold]COMMANDS:[/bold]
 
-  [bold cyan]/read <path>[/bold cyan]        Read a file and get AI analysis
-  [bold cyan]/run <cmd>[/bold cyan]          Run a shell command and analyze output
-  [bold cyan]/write <path>[/bold cyan]       Generate code/content and save to file
-  [bold cyan]/search <query>[/bold cyan]     Search the web (DuckDuckGo, free)
-  [bold cyan]/explain <path>[/bold cyan]     Explain a file in plain English
-  [bold cyan]/project <path>[/bold cyan]     Analyze an entire project folder
-  [bold cyan]/fix[/bold cyan]                Auto-fix the last error from /run
-  [bold cyan]/paste[/bold cyan]              Analyze clipboard contents
-  [bold cyan]/copy[/bold cyan]               Copy last AI response to clipboard
-  [bold cyan]/diff <f1> <f2>[/bold cyan]     Compare two files
-  [bold cyan]/todo [text][/bold cyan]        Add a task, or list all tasks
-  [bold cyan]/todo done <n>[/bold cyan]      Mark task #n as done
-  [bold cyan]/history[/bold cyan]            Show conversation summary
-  [bold cyan]/stream[/bold cyan]             Toggle streaming mode (word by word)
-  [bold cyan]/save [path][/bold cyan]        Save conversation to markdown
-  [bold cyan]/clear[/bold cyan]              Clear conversation history
-  [bold cyan]/model[/bold cyan]              Switch between Gemini and Groq
-  [bold cyan]/help[/bold cyan]               Show this help
-  [bold cyan]/quit[/bold cyan]               Exit
+  [bold cyan]/read <path>[/bold cyan]          Read a file and get AI analysis
+  [bold cyan]/run <cmd>[/bold cyan]            Run a shell command and analyze output
+  [bold cyan]/write <path>[/bold cyan]         Generate code/content and save to file
+  [bold cyan]/append <path>[/bold cyan]        Append AI-generated content to existing file
+  [bold cyan]/search <query>[/bold cyan]       Search the web (DuckDuckGo, free)
+  [bold cyan]/explain <path>[/bold cyan]       Explain a file in plain English
+  [bold cyan]/project <path>[/bold cyan]       Analyze an entire project folder
+  [bold cyan]/fix[/bold cyan]                  Auto-fix the last error from /run
+  [bold cyan]/shell <cmd>[/bold cyan]          Run command silently (no AI analysis)
+  [bold cyan]/paste[/bold cyan]                Analyze clipboard contents
+  [bold cyan]/copy[/bold cyan]                 Copy last AI response to clipboard
+  [bold cyan]/diff <f1> <f2>[/bold cyan]       Compare two files
+  [bold cyan]/snippet <name>[/bold cyan]       Save last response as a named snippet
+  [bold cyan]/snippets[/bold cyan]             List all saved snippets
+  [bold cyan]/load <name>[/bold cyan]          Load and display a snippet
+  [bold cyan]/todo [text][/bold cyan]          Add a task, or list all tasks
+  [bold cyan]/todo done <n>[/bold cyan]        Mark task #n as done
+  [bold cyan]/history[/bold cyan]              Show conversation summary
+  [bold cyan]/stream[/bold cyan]               Toggle streaming mode (word by word)
+  [bold cyan]/save [path][/bold cyan]          Save conversation to markdown
+  [bold cyan]/clear[/bold cyan]                Clear conversation history
+  [bold cyan]/model[/bold cyan]                Switch between Gemini and Groq
+  [bold cyan]/status[/bold cyan]               Show current settings and stats
+  [bold cyan]/help[/bold cyan]                 Show this help
+  [bold cyan]/quit[/bold cyan]                 Exit
 
 [bold]EXAMPLES:[/bold]
 
@@ -256,6 +257,10 @@ def show_help():
   You: /run git status
   You: /run python -m pytest tests/
 
+  [dim]# Run a command silently (just execute, no AI)[/dim]
+  You: /shell mkdir new_folder
+  You: /shell pip install requests
+
   [dim]# Fix the last failed command[/dim]
   You: /run python app.py
   You: /fix
@@ -264,11 +269,15 @@ def show_help():
   You: /write utils.py
   → What should the file contain? a function to parse CSV files
 
+  [dim]# Append to an existing file[/dim]
+  You: /append utils.py
+  → What to add? a function to validate email addresses
+
   [dim]# Search the web[/dim]
   You: /search python asyncio best practices 2026
   You: /search how to fix CORS error in FastAPI
 
-  [dim]# Explain code[/dim]
+  [dim]# Explain code in plain English[/dim]
   You: /explain C:\\dev\\project\\main.py
 
   [dim]# Analyze a whole project[/dim]
@@ -276,6 +285,12 @@ def show_help():
 
   [dim]# Compare files[/dim]
   You: /diff config_old.yaml config_new.yaml
+
+  [dim]# Save and reuse code snippets[/dim]
+  You: how do I connect to PostgreSQL in Python?
+  You: /snippet postgres_connect
+  You: /snippets             (list all)
+  You: /load postgres_connect (show it again)
 
   [dim]# Track tasks[/dim]
   You: /todo fix the login bug
@@ -290,16 +305,20 @@ def show_help():
   [dim]# Streaming (see response word by word)[/dim]
   You: /stream         (toggles on/off)
 
+  [dim]# Check current status[/dim]
+  You: /status
+
   [dim]# Conversation management[/dim]
   You: /save            (auto-named file)
   You: /save notes.md   (custom name)
   You: /clear           (fresh start)
+  You: /history         (summarize conversation)
   You: /model           (switch Gemini ↔ Groq)
 """)
 
 
 def main():
-    global use_gemini, streaming, todos
+    global use_gemini, streaming, todos, snippets
     console.print("[bold green]Chatty-My-Agent[/bold green] — Tech assistant (Gemini + Groq)")
     console.print("Type [bold]/help[/bold] for commands, or just ask a question")
     console.print("---")
@@ -308,6 +327,7 @@ def main():
     last_response = ""
     last_command = ""
     last_command_output = ""
+    msg_count = 0
 
     while True:
         try:
@@ -328,6 +348,7 @@ def main():
         # /clear
         if user_input.lower() == "/clear":
             messages.clear()
+            msg_count = 0
             console.print("[green]Conversation cleared.[/green]")
             continue
 
@@ -343,6 +364,20 @@ def main():
             streaming = not streaming
             state = "ON" if streaming else "OFF"
             console.print(f"[green]Streaming mode: {state}[/green]")
+            continue
+
+        # /status
+        if user_input.lower() == "/status":
+            current_model = "Gemini" if use_gemini else "Groq"
+            stream_state = "ON" if streaming else "OFF"
+            console.print(f"""
+[bold]Status:[/bold]
+  Model:      {current_model} (primary)
+  Streaming:  {stream_state}
+  Messages:   {len(messages)}
+  Todos:      {len(todos)} ({sum(1 for t in todos if t['done'])} done)
+  Snippets:   {len(snippets)}
+""")
             continue
 
         # /save
@@ -362,6 +397,37 @@ def main():
                     console.print("[red]Failed to copy.[/red]")
             else:
                 console.print("[yellow]No response to copy yet.[/yellow]")
+            continue
+
+        # /snippet
+        if user_input.lower().startswith("/snippet "):
+            name = user_input[9:].strip()
+            if last_response:
+                snippets[name] = last_response
+                console.print(f"[green]Saved snippet '{name}'[/green]")
+            else:
+                console.print("[yellow]No response to save yet.[/yellow]")
+            continue
+
+        # /snippets
+        if user_input.lower() == "/snippets":
+            if not snippets:
+                console.print("[yellow]No snippets saved. Use /snippet <name> after a response.[/yellow]")
+            else:
+                for name in snippets:
+                    preview = snippets[name][:60].replace("\n", " ")
+                    console.print(f"  [bold cyan]{name}[/bold cyan] — {preview}...")
+            continue
+
+        # /load
+        if user_input.lower().startswith("/load "):
+            name = user_input[6:].strip()
+            if name in snippets:
+                console.print()
+                console.print(Markdown(snippets[name]))
+                console.print()
+            else:
+                console.print(f"[red]Snippet '{name}' not found. Use /snippets to list.[/red]")
             continue
 
         # /todo
@@ -401,6 +467,16 @@ def main():
             console.print()
             console.print(Markdown(response))
             console.print()
+            continue
+
+        # /shell (run without AI analysis)
+        if user_input.startswith("/shell "):
+            cmd = user_input[7:].strip()
+            output = run_command(cmd)
+            console.print(f"[dim]$ {cmd}[/dim]")
+            console.print(output)
+            last_command = cmd
+            last_command_output = output
             continue
 
         # /fix
@@ -485,6 +561,25 @@ def main():
             console.print(Markdown(f"```\n{response[:500]}\n```"))
             continue
 
+        # /append
+        elif user_input.startswith("/append "):
+            path = user_input[8:].strip()
+            if not Path(path).exists():
+                console.print(f"[red]File not found: {path}[/red]")
+                continue
+            existing = read_file(path)
+            prompt = console.input("[bold blue]What to add?[/bold blue] ").strip()
+            messages.append({"role": "user", "content": f"The file `{path}` currently contains:\n```\n{existing}\n```\nAppend the following to it: {prompt}\nRespond with ONLY the new content to append (not the whole file), no markdown fences."})
+            with console.status("[bold green]Generating...[/bold green]"):
+                response = get_response(messages)
+            messages.append({"role": "assistant", "content": response})
+            last_response = response
+            with open(path, "a", encoding="utf-8") as f:
+                f.write("\n" + response)
+            console.print(f"[green]Appended to {path}[/green]")
+            console.print(Markdown(f"```\n{response[:500]}\n```"))
+            continue
+
         else:
             messages.append({"role": "user", "content": user_input})
 
@@ -502,6 +597,7 @@ def main():
 
         messages.append({"role": "assistant", "content": response})
         last_response = response
+        msg_count += 1
 
 
 if __name__ == "__main__":
