@@ -7,6 +7,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 from rich.console import Console
 from rich.markdown import Markdown
+from rich.syntax import Syntax
 
 load_dotenv()
 console = Console()
@@ -46,8 +47,40 @@ def call_groq(messages: list[dict]) -> str:
     return response.choices[0].message.content
 
 
+def call_gemini_stream(messages: list[dict]):
+    import google.generativeai as genai
+    genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+    model = genai.GenerativeModel("gemini-2.0-flash")
+    history = []
+    for msg in messages[:-1]:
+        role = "user" if msg["role"] == "user" else "model"
+        history.append({"role": role, "parts": [msg["content"]]})
+    chat = model.start_chat(history=history)
+    response = chat.send_message(messages[-1]["content"], stream=True)
+    for chunk in response:
+        if chunk.text:
+            yield chunk.text
+
+
+def call_groq_stream(messages: list[dict]):
+    from groq import Groq
+    client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+    groq_messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    groq_messages.extend(messages)
+    response = client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        messages=groq_messages,
+        stream=True,
+    )
+    for chunk in response:
+        if chunk.choices[0].delta.content:
+            yield chunk.choices[0].delta.content
+
+
 # State
 use_gemini = True
+streaming = True
+todos = []
 
 
 def get_response(messages: list[dict]) -> str:
@@ -72,6 +105,29 @@ def get_response(messages: list[dict]) -> str:
                 return f"Both providers failed.\nGroq: {e}\nGemini: {e2}"
 
 
+def get_response_stream(messages: list[dict]) -> str:
+    global use_gemini
+    full = ""
+    try:
+        stream = call_gemini_stream(messages) if use_gemini else call_groq_stream(messages)
+        for chunk in stream:
+            print(chunk, end="", flush=True)
+            full += chunk
+        print()
+        return full
+    except Exception as e:
+        console.print(f"\n[yellow]Stream failed ({e}), trying fallback...[/yellow]")
+        try:
+            stream = call_groq_stream(messages) if use_gemini else call_gemini_stream(messages)
+            for chunk in stream:
+                print(chunk, end="", flush=True)
+                full += chunk
+            print()
+            return full
+        except Exception as e2:
+            return f"Both providers failed.\n{e}\n{e2}"
+
+
 def read_file(path: str) -> str:
     try:
         return Path(path).read_text(encoding="utf-8")
@@ -91,7 +147,6 @@ def run_command(cmd: str) -> str:
 
 
 def web_search(query: str) -> str:
-    """Search the web using DuckDuckGo (no API key needed)."""
     try:
         from duckduckgo_search import DDGS
         with DDGS() as ddgs:
@@ -104,6 +159,31 @@ def web_search(query: str) -> str:
         return output.strip()
     except Exception as e:
         return f"Search error: {e}"
+
+
+def scan_project(path: str) -> str:
+    """Scan a project directory and return structure + key files."""
+    p = Path(path)
+    if not p.is_dir():
+        return f"Error: {path} is not a directory"
+    
+    ignore = {".git", "__pycache__", "node_modules", ".venv", "venv", ".env", "dist", "build"}
+    lines = []
+    file_count = 0
+    
+    for item in sorted(p.rglob("*")):
+        if any(part in ignore for part in item.parts):
+            continue
+        if item.is_file():
+            rel = item.relative_to(p)
+            size = item.stat().st_size
+            lines.append(f"  {rel} ({size} bytes)")
+            file_count += 1
+            if file_count > 50:
+                lines.append("  ... (truncated, too many files)")
+                break
+    
+    return f"Project: {path}\nFiles ({file_count}):\n" + "\n".join(lines)
 
 
 def clipboard_copy(text: str):
@@ -147,15 +227,19 @@ def show_help():
   [bold cyan]/write <path>[/bold cyan]       Generate code/content and save to file
   [bold cyan]/search <query>[/bold cyan]     Search the web (DuckDuckGo, free)
   [bold cyan]/explain <path>[/bold cyan]     Explain a file in plain English
+  [bold cyan]/project <path>[/bold cyan]     Analyze an entire project folder
   [bold cyan]/fix[/bold cyan]                Auto-fix the last error from /run
   [bold cyan]/paste[/bold cyan]              Analyze clipboard contents
   [bold cyan]/copy[/bold cyan]               Copy last AI response to clipboard
   [bold cyan]/diff <f1> <f2>[/bold cyan]     Compare two files
+  [bold cyan]/todo [text][/bold cyan]        Add a task, or list all tasks
+  [bold cyan]/todo done <n>[/bold cyan]      Mark task #n as done
   [bold cyan]/history[/bold cyan]            Show conversation summary
+  [bold cyan]/stream[/bold cyan]             Toggle streaming mode (word by word)
   [bold cyan]/save [path][/bold cyan]        Save conversation to markdown
   [bold cyan]/clear[/bold cyan]              Clear conversation history
   [bold cyan]/model[/bold cyan]              Switch between Gemini and Groq
-  [bold cyan]/help[/bold cyan]              Show this help
+  [bold cyan]/help[/bold cyan]               Show this help
   [bold cyan]/quit[/bold cyan]               Exit
 
 [bold]EXAMPLES:[/bold]
@@ -187,12 +271,24 @@ def show_help():
   [dim]# Explain code[/dim]
   You: /explain C:\\dev\\project\\main.py
 
+  [dim]# Analyze a whole project[/dim]
+  You: /project C:\\dev\\my-app
+
   [dim]# Compare files[/dim]
   You: /diff config_old.yaml config_new.yaml
+
+  [dim]# Track tasks[/dim]
+  You: /todo fix the login bug
+  You: /todo refactor database module
+  You: /todo              (shows all tasks)
+  You: /todo done 1       (marks first task done)
 
   [dim]# Clipboard workflow[/dim]
   You: /paste          (analyzes what you copied)
   You: /copy           (copies AI answer to clipboard)
+
+  [dim]# Streaming (see response word by word)[/dim]
+  You: /stream         (toggles on/off)
 
   [dim]# Conversation management[/dim]
   You: /save            (auto-named file)
@@ -203,7 +299,7 @@ def show_help():
 
 
 def main():
-    global use_gemini
+    global use_gemini, streaming, todos
     console.print("[bold green]Chatty-My-Agent[/bold green] — Tech assistant (Gemini + Groq)")
     console.print("Type [bold]/help[/bold] for commands, or just ask a question")
     console.print("---")
@@ -242,6 +338,13 @@ def main():
             console.print(f"[green]Switched primary model to {current}[/green]")
             continue
 
+        # /stream
+        if user_input.lower() == "/stream":
+            streaming = not streaming
+            state = "ON" if streaming else "OFF"
+            console.print(f"[green]Streaming mode: {state}[/green]")
+            continue
+
         # /save
         if user_input.lower().startswith("/save"):
             parts = user_input.split(maxsplit=1)
@@ -261,6 +364,30 @@ def main():
                 console.print("[yellow]No response to copy yet.[/yellow]")
             continue
 
+        # /todo
+        if user_input.lower().startswith("/todo"):
+            args = user_input[5:].strip()
+            if not args:
+                if not todos:
+                    console.print("[yellow]No tasks yet. Add one with /todo <text>[/yellow]")
+                else:
+                    for i, t in enumerate(todos, 1):
+                        status = "✓" if t["done"] else "○"
+                        style = "strike dim" if t["done"] else ""
+                        console.print(f"  [{style}]{status} {i}. {t['text']}[/{style}]")
+                continue
+            if args.startswith("done "):
+                try:
+                    idx = int(args[5:]) - 1
+                    todos[idx]["done"] = True
+                    console.print(f"[green]✓ Marked done: {todos[idx]['text']}[/green]")
+                except (ValueError, IndexError):
+                    console.print("[red]Invalid task number.[/red]")
+                continue
+            todos.append({"text": args, "done": False})
+            console.print(f"[green]Added task #{len(todos)}: {args}[/green]")
+            continue
+
         # /history
         if user_input.lower() == "/history":
             if not messages:
@@ -270,7 +397,7 @@ def main():
             messages.append({"role": "user", "content": "Summarize our conversation so far in bullet points. Be brief."})
             with console.status("[bold green]Summarizing...[/bold green]"):
                 response = get_response(messages)
-            messages.pop()  # remove the summary request from history
+            messages.pop()
             console.print()
             console.print(Markdown(response))
             console.print()
@@ -301,6 +428,14 @@ def main():
                 results = web_search(query)
             console.print(Markdown(results))
             messages.append({"role": "user", "content": f"I searched for '{query}' and got:\n{results}\nSummarize the key findings."})
+
+        # /project
+        elif user_input.startswith("/project "):
+            path = user_input[9:].strip()
+            console.print(f"[dim]Scanning project: {path}[/dim]")
+            structure = scan_project(path)
+            console.print(f"[dim]{structure[:300]}...[/dim]")
+            messages.append({"role": "user", "content": f"Here's a project structure:\n```\n{structure}\n```\nGive me an overview: what is this project, what tech stack does it use, and how is it organized?"})
 
         # /explain
         elif user_input.startswith("/explain "):
@@ -354,14 +489,19 @@ def main():
             messages.append({"role": "user", "content": user_input})
 
         # Get AI response
-        with console.status("[bold green]Thinking...[/bold green]"):
-            response = get_response(messages)
+        if streaming:
+            console.print()
+            response = get_response_stream(messages)
+            console.print()
+        else:
+            with console.status("[bold green]Thinking...[/bold green]"):
+                response = get_response(messages)
+            console.print()
+            console.print(Markdown(response))
+            console.print()
 
         messages.append({"role": "assistant", "content": response})
         last_response = response
-        console.print()
-        console.print(Markdown(response))
-        console.print()
 
 
 if __name__ == "__main__":
