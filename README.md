@@ -1,31 +1,50 @@
 # Chatty-My-Agent
 
-A CLI-based AI assistant powered by Google Gemini and Groq (with automatic fallback).
+A powerful CLI-based AI assistant powered by Google Gemini and Groq with automatic fallback.
 
 ## Features
 
+### AI & Models
 - **Dual LLM support** — Gemini 2.0 Flash (primary) + Groq Llama 3.3 70B (fallback)
 - **Streaming responses** — See text appear word by word in real-time
+- **Automatic fallback** — If one provider fails, seamlessly switches to the other
+- **Token tracking** — Estimate how many tokens you've used per session
+
+### Code & Files
 - **File analysis** — Read and analyze any file
 - **Code generation** — Generate and save code to files
 - **Append to files** — Add AI-generated content to existing files
-- **Refactoring** — AI rewrites your code with improvements (keeps a backup)
+- **Refactoring** — AI rewrites your code with improvements (with undo support)
 - **Test generation** — Auto-generate pytest unit tests for any file
-- **Web search** — DuckDuckGo search (free, no key needed)
+- **Code explanation** — Get plain English explanations of any file
+- **File summarization** — TL;DR of long files or logs
+- **File comparison** — Diff two files with AI explanation
+- **Project overview** — Scan an entire folder and get a tech stack summary
+- **Translation** — Translate AI responses to any language
+
+### Commands & System
 - **Command execution** — Run shell commands and get AI analysis
 - **Silent commands** — Run commands without AI analysis
 - **Auto-fix** — Fix errors from failed commands automatically
+- **Command chaining** — Pipe command output to AI with custom instructions
 - **Git overview** — Quick branch, status, and recent commits view
-- **Project overview** — Scan an entire folder and get a tech stack summary
-- **File comparison** — Diff two files with AI explanation
-- **Code explanation** — Get plain English explanations of any file
-- **Multi-line input** — Paste code blocks or long text
+
+### Productivity
+- **Web search** — DuckDuckGo search (free, no key needed)
 - **Clipboard integration** — Paste to analyze, copy responses
+- **Multi-line input** — Paste code blocks or long text
+- **Pinned context** — Keep files permanently in AI's context
 - **Snippet library** — Save, list, and reuse useful AI responses
 - **Task tracking** — Built-in todo list to track work
+- **Aliases** — Create persistent custom shortcuts for commands
+- **Undo** — Revert any file write, append, or refactor
+
+### Session & Config
+- **Persistent config** — Settings saved to disk (model, streaming, theme)
+- **Session memory** — Save and reload conversation history across sessions
+- **Themes** — Dark, light, and minimal color schemes
 - **Session timer** — Track how long you've been working
-- **Status dashboard** — See current settings and session stats
-- **Conversation management** — Save, clear, summarize history
+- **Export** — Save conversations as markdown or JSON
 
 ## Setup
 
@@ -52,125 +71,152 @@ Get free keys from:
 python agent.py
 ```
 
-### All Commands (27 total)
+### All Commands (37 total)
 
 | Command | Description |
 |---------|-------------|
 | `/read <path>` | Read a file and analyze it |
 | `/run <cmd>` | Run a command and analyze output |
-| `/shell <cmd>` | Run a command silently (no AI analysis) |
+| `/shell <cmd>` | Run a command silently (no AI) |
 | `/write <path>` | Generate content and save to file |
-| `/append <path>` | Append AI-generated content to existing file |
-| `/refactor <path>` | AI rewrites file with improvements (saves .bak backup) |
-| `/test <path>` | Generate pytest unit tests for a file |
+| `/append <path>` | Append AI content to existing file |
+| `/refactor <path>` | AI rewrites file with improvements |
+| `/test <path>` | Generate pytest unit tests |
 | `/search <query>` | Search the web (DuckDuckGo) |
 | `/explain <path>` | Explain a file in plain English |
+| `/summarize <path>` | TL;DR of a long file |
+| `/translate <lang>` | Translate last response |
 | `/project <path>` | Analyze an entire project folder |
 | `/fix` | Auto-fix the last failed command |
-| `/git` | Quick git status, branch, and recent commits |
+| `/git` | Quick git status + recent commits |
+| `/chain <c1> \| <c2>` | Run command, pipe to AI with instruction |
 | `/paste` | Analyze clipboard contents |
 | `/copy` | Copy last AI response to clipboard |
-| `/multi` | Enter multi-line input mode (type END to finish) |
+| `/multi` | Multi-line input mode (END to finish) |
+| `/context <path>` | Pin a file as permanent context |
+| `/context clear` | Remove all pinned context |
 | `/diff <f1> <f2>` | Compare two files |
-| `/snippet <name>` | Save last response as a named snippet |
+| `/snippet <name>` | Save last response as snippet |
 | `/snippets` | List all saved snippets |
-| `/load <name>` | Load and display a saved snippet |
+| `/load <name>` | Display a saved snippet |
 | `/todo [text]` | Add a task or list all tasks |
 | `/todo done <n>` | Mark task #n as done |
+| `/alias <name> <cmd>` | Create a persistent shortcut |
+| `/aliases` | List all aliases |
+| `/undo` | Revert last file write/refactor |
 | `/history` | Show conversation summary |
-| `/stream` | Toggle streaming mode (word by word) |
-| `/timer` | Show how long you've been in this session |
-| `/status` | Show current settings and session stats |
+| `/stream` | Toggle streaming mode |
+| `/timer` | Show session duration |
+| `/cost` | Show estimated token usage |
+| `/status` | Full dashboard |
+| `/config <key> <val>` | Set persistent config value |
+| `/theme <name>` | Switch theme (dark/light/minimal) |
 | `/save [path]` | Save conversation to markdown |
+| `/export json` | Export conversation as JSON |
+| `/load-session` | Load last saved session |
 | `/clear` | Clear conversation history |
 | `/model` | Switch between Gemini and Groq |
 | `/help` | Show help with examples |
-| `/quit` | Exit |
+| `/quit` | Exit (auto-saves session) |
 
 ### Examples
 
 ```bash
 # Ask any tech question
 You: what is a REST API?
-You: write a Python function to sort a list of dicts by key
+You: write me a Python web scraper
 
-# Read and analyze a log file
+# Read and analyze files
 You: /read C:\logs\app.log
+You: /summarize C:\docs\spec.md
+You: /explain C:\dev\project\main.py
 
-# Run a command and get AI explanation
+# Run commands
 You: /run ipconfig /all
-You: /run git status
-You: /run python -m pytest tests/
+You: /run python -m pytest
+You: /shell pip install requests    (silent, no AI)
 
-# Run a command silently (just execute, no AI)
-You: /shell mkdir new_folder
-You: /shell pip install requests
+# Chain: run command + custom AI instruction
+You: /chain dir /s | list only Python files
 
-# Fix a failed command automatically
+# Fix errors
 You: /run python app.py
 You: /fix
 
-# Generate a new file
+# Generate and modify files
 You: /write utils.py
-→ What should the file contain? a function to parse CSV files
-
-# Add to an existing file
 You: /append utils.py
-→ What to add? a function to validate email addresses
+You: /refactor messy_code.py
+You: /undo                          (revert if needed)
 
-# Refactor messy code (saves backup as .bak)
-You: /refactor C:\dev\project\messy_code.py
+# Generate tests
+You: /test utils.py
 
-# Generate unit tests
-You: /test C:\dev\project\utils.py
+# Translate
+You: /translate spanish
+You: /translate romanian
 
-# Search the web
-You: /search python asyncio best practices 2026
-You: /search how to fix CORS error in FastAPI
+# Web search
+You: /search python asyncio best practices
 
-# Explain code in plain English
-You: /explain C:\dev\project\main.py
+# Pin context (AI always sees these files)
+You: /context C:\dev\project\config.yaml
+You: /context C:\dev\project\schema.sql
+You: /context clear
 
-# Analyze a whole project
-You: /project C:\dev\my-app
-
-# Quick git overview
+# Git overview
 You: /git
 
 # Compare files
-You: /diff config_old.yaml config_new.yaml
+You: /diff old.yaml new.yaml
 
-# Multi-line input (paste code blocks)
+# Multi-line input
 You: /multi
-→ (type or paste multiple lines, then type END)
+→ paste code block, type END
 
-# Save and reuse code snippets
-You: how do I connect to PostgreSQL in Python?
-You: /snippet postgres_connect    (saves the response)
-You: /snippets                    (list all saved)
-You: /load postgres_connect       (show it again)
+# Snippets (save & reuse responses)
+You: /snippet postgres_connect
+You: /snippets
+You: /load postgres_connect
 
-# Track tasks
+# Tasks
 You: /todo fix the login bug
-You: /todo refactor database module
-You: /todo              (shows all tasks)
-You: /todo done 1       (marks first task done)
+You: /todo done 1
 
-# Clipboard workflow
-You: /paste       (analyzes what you copied)
-You: /copy        (copies AI answer to clipboard)
+# Aliases (persistent shortcuts)
+You: /alias deploy /shell git push
+You: /alias logs /read C:\logs\app.log
+You: deploy                         (runs the alias)
+You: /aliases                       (list all)
 
-# Session info
-You: /stream      (toggle streaming on/off)
-You: /timer       (how long you've been here)
-You: /status      (full dashboard)
-You: /model       (switch Gemini ↔ Groq)
+# Clipboard
+You: /paste    (analyze what you copied)
+You: /copy     (copy AI answer)
 
-# Conversation management
-You: /save            (auto-named file)
-You: /save notes.md   (custom name)
-You: /clear           (fresh start)
-You: /history         (summarize conversation)
+# Session management
+You: /stream        (toggle word-by-word)
+You: /timer         (session duration)
+You: /cost          (token estimate)
+You: /status        (full dashboard)
+You: /config model groq
+You: /theme minimal
+You: /save
+You: /export json
+You: /load-session  (resume last session)
+```
+
+## Project Structure
+
+```
+Chatty-My-Agent/
+├── agent.py          ← Main CLI loop and command handling
+├── llm.py            ← LLM provider calls (Gemini + Groq)
+├── tools.py          ← Utility functions (file, clipboard, search)
+├── storage.py        ← Persistent config, aliases, history
+├── help_text.py      ← Help screen content
+├── requirements.txt  ← Python dependencies
+├── .env              ← Your API keys (not in git)
+└── .gitignore
 ```
 
 ## How It Works
@@ -179,6 +225,23 @@ You: /history         (summarize conversation)
 2. The agent sends it to **Gemini** (fast, free, good at code)
 3. If Gemini fails (rate limit, error), it automatically falls back to **Groq**
 4. Response is streamed word by word (or displayed at once if streaming is off)
+5. Pinned context files are included with every request
+6. Session is auto-saved on exit and can be reloaded
+
+## Configuration
+
+Settings are saved to `~/.chatty-agent/config.json`:
+
+```json
+{
+  "model": "gemini",
+  "streaming": true,
+  "theme": "dark"
+}
+```
+
+Aliases saved to `~/.chatty-agent/aliases.json`.
+Session history saved to `~/.chatty-agent/history.json`.
 
 ## Requirements
 
