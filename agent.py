@@ -12,6 +12,8 @@ from llm import call_gemini, call_groq, call_gemini_stream, call_groq_stream
 from tools import read_file, run_command, web_search, scan_project, clipboard_copy, clipboard_paste
 from storage import load_config, save_config, load_aliases, save_aliases, save_history, load_history
 from help_text import show_help
+from plugins import list_plugins, run_plugin, create_example_plugin
+from autonomous import run_autonomous
 
 THEMES = {
     "dark": Theme({"info": "dim cyan", "warning": "yellow", "error": "bold red"}),
@@ -617,6 +619,72 @@ def main():
                 f.write("\n" + response)
             console.print(f"[green]Appended to {path}[/green]")
             console.print(Markdown(f"```\n{response[:500]}\n```"))
+            continue
+
+        # /voice
+        elif user_input.lower() == "/voice":
+            try:
+                from voice import speech_to_text
+                text = speech_to_text()
+                console.print(f"[dim]You said: {text}[/dim]")
+                messages.append({"role": "user", "content": text})
+            except ImportError:
+                console.print("[red]Voice requires: pip install sounddevice numpy[/red]")
+                continue
+            except Exception as e:
+                console.print(f"[red]Voice error: {e}[/red]")
+                continue
+
+        # /speak
+        elif user_input.lower() == "/speak":
+            if last_response:
+                try:
+                    from voice import text_to_speech
+                    text_to_speech(last_response)
+                except Exception as e:
+                    console.print(f"[red]TTS error: {e}[/red]")
+            else:
+                console.print("[yellow]No response to speak.[/yellow]")
+            continue
+
+        # /agent
+        elif user_input.startswith("/agent "):
+            goal = user_input[7:].strip()
+            console.print(f"[bold green]🤖 Autonomous mode: {goal}[/bold green]")
+            result = run_autonomous(goal, get_response, console)
+            last_response = result
+            messages.append({"role": "user", "content": f"[Autonomous task: {goal}]"})
+            messages.append({"role": "assistant", "content": result})
+            continue
+
+        # /plugins
+        elif user_input.lower() == "/plugins":
+            plugins = list_plugins()
+            if not plugins:
+                console.print("[yellow]No plugins. Dir: ~/.chatty-agent/plugins/[/yellow]")
+                console.print("[dim]Use /plugin-init to create an example.[/dim]")
+            else:
+                for p in plugins:
+                    console.print(f"  [bold cyan]{p['name']}[/bold cyan] — {p['description']}")
+            continue
+
+        # /plugin-init
+        elif user_input.lower() == "/plugin-init":
+            path = create_example_plugin()
+            if path:
+                console.print(f"[green]Created example plugin: {path}[/green]")
+            else:
+                console.print("[dim]Example plugin already exists.[/dim]")
+            continue
+
+        # /plugin <name> <args>
+        elif user_input.startswith("/plugin "):
+            parts = user_input[8:].split(maxsplit=1)
+            name = parts[0]
+            args = parts[1] if len(parts) > 1 else ""
+            result = run_plugin(name, args, messages, get_response)
+            console.print(result)
+            last_response = result
             continue
 
         else:

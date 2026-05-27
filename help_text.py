@@ -45,6 +45,12 @@ def show_help():
   [bold cyan]/alias <n> <cmd>[/bold cyan]      Create a shortcut (saved to disk)
   [bold cyan]/aliases[/bold cyan]              List all aliases
   [bold cyan]/undo[/bold cyan]                 Revert last file write/refactor
+  [bold cyan]/voice[/bold cyan]                Voice input (speak instead of type)
+  [bold cyan]/speak[/bold cyan]                Read last response aloud (TTS)
+  [bold cyan]/agent <goal>[/bold cyan]         Autonomous mode (AI decides actions)
+  [bold cyan]/plugins[/bold cyan]              List installed plugins
+  [bold cyan]/plugin <n> [args][/bold cyan]    Run a plugin
+  [bold cyan]/plugin-init[/bold cyan]          Create example plugin
   [bold cyan]/history[/bold cyan]              Show conversation summary
   [bold cyan]/stream[/bold cyan]               Toggle streaming mode
   [bold cyan]/timer[/bold cyan]                Show session duration
@@ -129,4 +135,20 @@ def show_help():
   You: /config model groq
   You: /theme minimal
   You: /save   /export json   /load-session
+
+  [dim]# Voice (requires: pip install sounddevice numpy)[/dim]
+  You: /voice          (speak instead of type)
+  You: /speak          (hear the last response)
+
+  [dim]# Autonomous agent (AI runs commands itself)[/dim]
+  You: /agent find all TODO comments in C:\\dev\\project and list them
+  You: /agent create a Python script that downloads a webpage
+
+  [dim]# Plugins (extensible)[/dim]
+  You: /plugin-init    (creates example plugin)
+  You: /plugins        (list available)
+  You: /plugin wordcount C:\\dev\\file.py
+
+  [dim]# Web UI (separate command)[/dim]
+  Run: python web_ui.py   → opens at http://localhost:5000
 """)

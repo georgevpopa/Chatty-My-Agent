@@ -104,6 +104,12 @@ python agent.py
 | `/alias <name> <cmd>` | Create a persistent shortcut |
 | `/aliases` | List all aliases |
 | `/undo` | Revert last file write/refactor |
+| `/voice` | Voice input (speak instead of type) |
+| `/speak` | Read last response aloud (TTS) |
+| `/agent <goal>` | Autonomous mode (AI decides actions) |
+| `/plugins` | List installed plugins |
+| `/plugin <name> [args]` | Run a plugin |
+| `/plugin-init` | Create example plugin |
 | `/history` | Show conversation summary |
 | `/stream` | Toggle streaming mode |
 | `/timer` | Show session duration |
@@ -203,6 +209,23 @@ You: /theme minimal
 You: /save
 You: /export json
 You: /load-session  (resume last session)
+
+# Voice
+You: /voice         (speak instead of type)
+You: /speak         (hear the response)
+
+# Autonomous agent
+You: /agent find all TODO comments in C:\dev\project
+You: /agent create a hello world Flask app in C:\dev\test
+
+# Plugins
+You: /plugin-init
+You: /plugins
+You: /plugin wordcount C:\dev\file.py
+
+# Web UI (separate process)
+> python web_ui.py
+→ opens at http://localhost:5000
 ```
 
 ## Project Structure
@@ -214,6 +237,10 @@ Chatty-My-Agent/
 ├── tools.py          ← Utility functions (file, clipboard, search)
 ├── storage.py        ← Persistent config, aliases, history
 ├── help_text.py      ← Help screen content
+├── autonomous.py     ← Autonomous agent mode
+├── plugins.py        ← Plugin system
+├── voice.py          ← Voice input/output (STT + TTS)
+├── web_ui.py         ← Web UI (Flask)
 ├── requirements.txt  ← Python dependencies
 ├── .env              ← Your API keys (not in git)
 └── .gitignore
@@ -227,6 +254,29 @@ Chatty-My-Agent/
 4. Response is streamed word by word (or displayed at once if streaming is off)
 5. Pinned context files are included with every request
 6. Session is auto-saved on exit and can be reloaded
+
+## Stretch Features
+
+### Web UI
+Run `python web_ui.py` to start a browser-based interface at http://localhost:5000.
+Supports chat, `/search`, `/read`, `/run`, `/model`, and `/clear`.
+
+### Voice Input/Output
+- `/voice` — Records 5 seconds from your microphone, transcribes with Groq Whisper
+- `/speak` — Reads the last response aloud using Windows TTS
+- Requires: `pip install sounddevice numpy`
+
+### Autonomous Agent Mode
+- `/agent <goal>` — The AI decides what to do: reads files, runs commands, searches the web, writes files
+- Runs up to 10 steps autonomously
+- Example: `/agent find all Python files with TODO comments in C:\dev\project`
+
+### Plugin System
+- Plugins are Python files in `~/.chatty-agent/plugins/`
+- `/plugin-init` creates an example plugin
+- `/plugins` lists available plugins
+- `/plugin <name> <args>` runs a plugin
+- Each plugin defines `name`, `description`, and a `run()` function
 
 ## Configuration
 
