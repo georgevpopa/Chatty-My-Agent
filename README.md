@@ -277,7 +277,12 @@ Run separately:
 ```cmd
 python web_ui.py
 ```
-Opens at http://localhost:5000. Supports chat, search, file reading, and commands.
+Opens at http://localhost:5000. Features:
+- Chat with AI (same as CLI)
+- **Model selector dropdown** in the header — switch between all 7 providers instantly
+- Supports `/search`, `/read`, `/run`, `/clear` commands
+- Auto-fallback if selected model fails
+- Dark theme matching the CLI
 
 ---
 
@@ -337,10 +342,21 @@ All persistent data is in `~/.chatty-agent/`:
 ## Requirements
 
 - Python 3.10+
-- Free API keys (Gemini + Groq)
-- Optional: `sounddevice` + `numpy` for voice
-- Optional: `flask` for web UI
-- Optional: Docker for `/docker` commands
+- At least one free API key (see Step 5 above)
+- Optional: `sounddevice` + `numpy` for voice (`pip install sounddevice numpy`)
+- Optional: `flask` for web UI (`pip install flask`)
+- Optional: Docker installed for `/docker` commands
+
+## Troubleshooting
+
+| Problem | Solution |
+|---------|----------|
+| `ModuleNotFoundError: No module named 'flask'` | Run `pip install flask` |
+| `ModuleNotFoundError: No module named 'sounddevice'` | Run `pip install sounddevice numpy` |
+| Gemini quota exceeded | Wait 60s or switch model: `/model groq` |
+| Groq `proxies` error | Run `pip install --upgrade groq httpx` |
+| Web UI mascot looks scrambled | Hard refresh browser (Ctrl+Shift+R) |
+| `Both providers failed` | Check your `.env` keys are correct |
 
 ## License
 
