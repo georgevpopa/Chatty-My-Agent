@@ -2,17 +2,18 @@
 import os
 import json
 from pathlib import Path
-from flask import Flask, render_template_string, request, jsonify, Response
+from flask import Flask, render_template_string, request, jsonify
 from dotenv import load_dotenv
 
 load_dotenv()
 
-from llm import call_gemini, call_groq, call_gemini_stream, call_groq_stream
+from llm import call_model, MODELS
 from tools import read_file, run_command, web_search
 
 app = Flask(__name__)
 messages = []
-use_gemini = True
+current_model = "gemini"
+fallback_model = "groq"
 
 HTML = """
 <!DOCTYPE html>
@@ -22,12 +23,12 @@ HTML = """
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: 'Segoe UI', sans-serif; background: #1a1a2e; color: #eee; height: 100vh; display: flex; flex-direction: column; }
-        #header { padding: 12px 20px; background: #16213e; border-bottom: 1px solid #0f3460; text-align: center; }
-        #header h1 { font-size: 1.2em; color: #4ecca3; }
+        #header { padding: 12px 20px; background: #16213e; border-bottom: 1px solid #0f3460; text-align: center; display: flex; align-items: center; justify-content: space-between; }
+        #mascot { color: #4ecca3; font-family: 'Courier New', monospace; font-size: 10px; line-height: 1.2; white-space: pre; text-align: left; }
+        #model-select { padding: 8px 12px; background: #1a1a2e; color: #4ecca3; border: 1px solid #4ecca3; border-radius: 6px; font-size: 0.9em; cursor: pointer; outline: none; }
+        #model-select option { background: #1a1a2e; color: #eee; }
         #chat { flex: 1; overflow-y: auto; padding: 20px; }
-        .msg { margin-bottom: 16px; max-width: 80%; padding: 12px 16px; border-radius: 12px; line-height: 1.5; white-space: pre-wrap; }
-        .msg code { background: #0f3460; padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
-        .msg pre { background: #0f3460; padding: 12px; border-radius: 8px; overflow-x: auto; margin: 8px 0; }
+        .msg { margin-bottom: 16px; max-width: 80%; padding: 12px 16px; border-radius: 12px; line-height: 1.5; white-space: pre-wrap; word-wrap: break-word; }
         .user { background: #0f3460; margin-left: auto; border-bottom-right-radius: 4px; }
         .assistant { background: #1a1a2e; border: 1px solid #333; border-bottom-left-radius: 4px; }
         #input-area { padding: 16px 20px; background: #16213e; border-top: 1px solid #0f3460; display: flex; gap: 10px; }
@@ -36,17 +37,17 @@ HTML = """
         #send { padding: 12px 24px; background: #4ecca3; color: #1a1a2e; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; }
         #send:hover { background: #3dbb94; }
         .typing { color: #4ecca3; font-style: italic; }
+        .system-msg { color: #4ecca3; font-style: italic; text-align: center; margin: 8px 0; font-size: 0.9em; }
     </style>
 </head>
 <body>
     <div id="header">
-        <pre style="color:#4ecca3;font-family:'Courier New',monospace;font-size:12px;line-height:1.3;margin:0;display:inline-block;text-align:left;">╔═══╗
-║■ ■║  Chatty
-║ ▽ ║  Your Friendly Assistant
-╚╦═╦╝/
-╔╩═╩╗
-║   ║
-╚╦ ╦╝</pre>
+        <pre id="mascot">╔═══╗
+║■ ■║ Chatty
+║ ▽ ║ Your Friendly Assistant
+╚╦═╦╝/</pre>
+        <select id="model-select" onchange="switchModel(this.value)">
+        </select>
     </div>
     <div id="chat"></div>
     <div id="input-area">
@@ -56,6 +57,19 @@ HTML = """
     <script>
         const chat = document.getElementById('chat');
         const input = document.getElementById('input');
+        const modelSelect = document.getElementById('model-select');
+
+        // Load models on start
+        fetch('/models').then(r => r.json()).then(data => {
+            modelSelect.innerHTML = '';
+            data.models.forEach(m => {
+                const opt = document.createElement('option');
+                opt.value = m.key;
+                opt.textContent = m.name;
+                if (m.active) opt.selected = true;
+                modelSelect.appendChild(opt);
+            });
+        });
 
         input.addEventListener('keydown', e => { if (e.key === 'Enter') send(); });
 
@@ -66,6 +80,24 @@ HTML = """
             chat.appendChild(div);
             chat.scrollTop = chat.scrollHeight;
             return div;
+        }
+
+        function addSystem(text) {
+            const div = document.createElement('div');
+            div.className = 'system-msg';
+            div.textContent = text;
+            chat.appendChild(div);
+            chat.scrollTop = chat.scrollHeight;
+        }
+
+        function switchModel(key) {
+            fetch('/switch-model', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({model: key})
+            }).then(r => r.json()).then(data => {
+                addSystem('Switched to ' + data.name);
+            });
         }
 
         async function send() {
@@ -103,9 +135,26 @@ def index():
     return render_template_string(HTML)
 
 
+@app.route("/models")
+def get_models():
+    model_list = [{"key": k, "name": v["name"], "active": k == current_model} for k, v in MODELS.items()]
+    return jsonify({"models": model_list})
+
+
+@app.route("/switch-model", methods=["POST"])
+def switch_model():
+    global current_model
+    data = request.json
+    key = data.get("model")
+    if key in MODELS:
+        current_model = key
+        return jsonify({"name": MODELS[key]["name"]})
+    return jsonify({"error": "Unknown model"}), 400
+
+
 @app.route("/chat", methods=["POST"])
-def chat():
-    global messages, use_gemini
+def chat_endpoint():
+    global messages, current_model, fallback_model
     data = request.json
     user_msg = data.get("message", "")
 
@@ -122,26 +171,20 @@ def chat():
         cmd = user_msg[5:]
         output = run_command(cmd)
         messages.append({"role": "user", "content": f"Command `{cmd}` output:\n```\n{output}\n```\nAnalyze."})
-    elif user_msg == "/model":
-        use_gemini = not use_gemini
-        return jsonify({"response": f"Switched to {'Gemini' if use_gemini else 'Groq'}"})
     elif user_msg == "/clear":
         messages.clear()
         return jsonify({"response": "Conversation cleared."})
     else:
         messages.append({"role": "user", "content": user_msg})
 
-    # Get response
+    # Get response with fallback
     try:
-        if use_gemini:
-            response = call_gemini(messages)
-        else:
-            response = call_groq(messages)
+        response = call_model(current_model, messages)
     except Exception as e:
         try:
-            response = call_groq(messages) if use_gemini else call_gemini(messages)
+            response = call_model(fallback_model, messages)
         except Exception as e2:
-            response = f"Both providers failed: {e} / {e2}"
+            response = f"Both providers failed:\n{current_model}: {e}\n{fallback_model}: {e2}"
 
     messages.append({"role": "assistant", "content": response})
     return jsonify({"response": response})
