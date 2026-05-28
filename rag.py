@@ -11,7 +11,8 @@ from typing import Optional
 VECTORDB_PATH = str(Path.home() / ".chatty-agent" / "vectordb")
 SUPPORTED_EXTENSIONS = {".txt", ".md", ".py", ".js", ".ts", ".json", ".yaml", ".yml",
                         ".log", ".csv", ".html", ".css", ".java", ".c", ".cpp", ".h",
-                        ".rs", ".go", ".sh", ".bat", ".ps1", ".sql", ".xml", ".ini", ".cfg", ".toml"}
+                        ".rs", ".go", ".sh", ".bat", ".ps1", ".sql", ".xml", ".ini", ".cfg", ".toml",
+                        ".pdf"}
 
 # Knowledge mode
 MODES = ["general", "local", "hybrid"]
@@ -80,7 +81,12 @@ def index_file(file_path: str) -> int:
     if path.suffix.lower() not in SUPPORTED_EXTENSIONS:
         raise ValueError(f"Unsupported file type: {path.suffix}. Supported: {', '.join(sorted(SUPPORTED_EXTENSIONS))}")
 
-    text = path.read_text(encoding="utf-8", errors="replace")
+    # Extract text based on file type
+    if path.suffix.lower() == ".pdf":
+        text = _read_pdf(path)
+    else:
+        text = path.read_text(encoding="utf-8", errors="replace")
+
     if not text.strip():
         return 0
 
@@ -103,6 +109,16 @@ def index_file(file_path: str) -> int:
 
     collection.upsert(ids=ids, documents=documents, embeddings=embeddings, metadatas=metadatas)
     return len(chunks)
+
+
+def _read_pdf(path: Path) -> str:
+    """Extract text from a PDF file."""
+    import pymupdf
+    text = ""
+    with pymupdf.open(str(path)) as doc:
+        for page in doc:
+            text += page.get_text() + "\n"
+    return text
 
 
 def index_folder(folder_path: str) -> dict:
