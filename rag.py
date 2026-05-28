@@ -4,9 +4,13 @@ Indexes local files into a vector database and retrieves relevant chunks
 to augment LLM prompts with your own data.
 """
 import os
+import sys
 import hashlib
 from pathlib import Path
 from typing import Optional
+
+# Add torch path (Windows long path workaround)
+sys.path.insert(0, r"C:\dev\torch_pkg")
 
 VECTORDB_PATH = str(Path.home() / ".chatty-agent" / "vectordb")
 SUPPORTED_EXTENSIONS = {".txt", ".md", ".py", ".js", ".ts", ".json", ".yaml", ".yml",

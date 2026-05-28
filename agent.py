@@ -4,6 +4,10 @@ import json
 import time
 import random
 from pathlib import Path
+
+# Add torch path (Windows long path workaround)
+sys.path.insert(0, r"C:\dev\torch_pkg")
+
 from datetime import datetime
 from rich.console import Console
 from rich.markdown import Markdown
