@@ -16,6 +16,7 @@ from storage import (load_config, save_config, load_aliases, save_aliases, save_
 from help_text import show_help
 from plugins import list_plugins, run_plugin, create_example_plugin
 from autonomous import run_autonomous
+from rag import index_file, index_folder, search as rag_search, get_context_for_query, list_indexed, clear_index, MODES as KNOWLEDGE_MODES
 
 TIPS = [
     "💡 Use /context to pin files the AI should always know about.",
@@ -44,6 +45,7 @@ current_model = config.get("model", "gemini")
 fallback_model = config.get("fallback", "groq")
 streaming = config.get("streaming", True)
 persona = config.get("persona", "default")
+knowledge_mode = config.get("knowledge_mode", "general")
 todos = []
 snippets = {}
 bookmarks = []
@@ -101,6 +103,18 @@ def ask_ai(messages: list[dict]) -> str:
     else:
         augmented = messages
 
+    # RAG: add local knowledge context
+    if knowledge_mode in ("local", "hybrid") and messages:
+        last_user_msg = messages[-1]["content"] if messages[-1]["role"] == "user" else ""
+        if last_user_msg:
+            rag_context = get_context_for_query(last_user_msg)
+            if rag_context:
+                prefix = "[Local Knowledge - answer based on this data"
+                if knowledge_mode == "local":
+                    prefix += ", do NOT use general knowledge"
+                prefix += "]:\n\n"
+                augmented = [{"role": "user", "content": prefix + rag_context}] + augmented
+
     for msg in augmented:
         token_estimate += estimate_tokens(msg["content"])
 
@@ -152,7 +166,7 @@ def save_conversation(messages: list[dict], path: str = None):
 
 
 def main():
-    global use_gemini, streaming, todos, snippets, aliases, pinned_context, undo_stack, token_estimate, config, persona, memory, bookmarks
+    global use_gemini, streaming, todos, snippets, aliases, pinned_context, undo_stack, token_estimate, config, persona, memory, bookmarks, current_model, fallback_model, knowledge_mode
 
     console.print("""[bold green]
     ╔══════════════════════════════════════╗
@@ -663,6 +677,69 @@ def main():
                 f.write("\n" + response)
             console.print(f"[green]Appended to {path}[/green]")
             console.print(Markdown(f"```\n{response[:500]}\n```"))
+            continue
+
+        # /index
+        elif user_input.lower().startswith("/index"):
+            args = user_input[6:].strip()
+            if not args:
+                console.print("[red]Usage: /index <path> | /index list | /index clear[/red]")
+            elif args.lower() == "list":
+                try:
+                    info = list_indexed()
+                    if info["count"] == 0:
+                        console.print("[yellow]Nothing indexed yet. Use /index <path>[/yellow]")
+                    else:
+                        console.print(f"[bold]Indexed:[/bold] {info['count']} chunks from {len(info['sources'])} files")
+                        for s in info["sources"][:20]:
+                            console.print(f"  [dim]{s}[/dim]")
+                        if len(info["sources"]) > 20:
+                            console.print(f"  [dim]... and {len(info['sources']) - 20} more[/dim]")
+                except Exception as e:
+                    console.print(f"[red]Error: {e}[/red]")
+            elif args.lower() == "clear":
+                try:
+                    clear_index()
+                    console.print("[green]Index cleared.[/green]")
+                except Exception as e:
+                    console.print(f"[red]Error: {e}[/red]")
+            else:
+                path = args
+                try:
+                    p = Path(path)
+                    if p.is_dir():
+                        console.print(f"[dim]Indexing folder: {path}...[/dim]")
+                        with console.status("[bold green]Indexing...[/bold green]"):
+                            stats = index_folder(path)
+                        console.print(f"[green]Indexed {stats['files']} files ({stats['chunks']} chunks)[/green]")
+                        if stats["skipped"]:
+                            console.print(f"[yellow]Skipped {stats['skipped']} files[/yellow]")
+                    elif p.is_file():
+                        with console.status("[bold green]Indexing...[/bold green]"):
+                            n = index_file(path)
+                        console.print(f"[green]Indexed {path} ({n} chunks)[/green]")
+                    else:
+                        console.print(f"[red]Path not found: {path}[/red]")
+                except Exception as e:
+                    console.print(f"[red]Error: {e}[/red]")
+            continue
+
+        # /knowledge
+        elif user_input.lower().startswith("/knowledge"):
+            args = user_input[10:].strip()
+            if not args:
+                console.print(f"[bold]Knowledge mode:[/bold] {knowledge_mode}")
+                console.print("[dim]Options: general, local, hybrid[/dim]")
+                console.print("[dim]  general — LLM uses only its training data[/dim]")
+                console.print("[dim]  local   — answers ONLY from your indexed files[/dim]")
+                console.print("[dim]  hybrid  — uses both local files + general knowledge[/dim]")
+            elif args.lower() in KNOWLEDGE_MODES:
+                knowledge_mode = args.lower()
+                config["knowledge_mode"] = knowledge_mode
+                save_config(config)
+                console.print(f"[green]Knowledge mode: {knowledge_mode}[/green]")
+            else:
+                console.print(f"[red]Unknown mode. Options: {', '.join(KNOWLEDGE_MODES)}[/red]")
             continue
 
         # /retry

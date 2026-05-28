@@ -236,6 +236,64 @@ Type a question and press Enter. That's it!
 
 ---
 
+## RAG — Local Knowledge Base
+
+Feed your own files to the AI so it answers from **your data** instead of (or in addition to) general knowledge.
+
+### How to Fill the Database
+
+**Index a single file:**
+```bash
+You: /index C:\docs\company-handbook.md
+# → Indexed company-handbook.md (12 chunks)
+```
+
+**Index an entire folder (recursive):**
+```bash
+You: /index C:\dev\my-project
+# → Indexed 45 files (230 chunks)
+```
+
+**What gets indexed:**
+- Code: `.py`, `.js`, `.ts`, `.java`, `.c`, `.cpp`, `.rs`, `.go`
+- Docs: `.md`, `.txt`, `.html`, `.xml`
+- Config: `.json`, `.yaml`, `.yml`, `.toml`, `.ini`, `.cfg`
+- Data: `.csv`, `.log`, `.sql`
+- Scripts: `.sh`, `.bat`, `.ps1`
+
+**Folders automatically skipped:** `.git`, `node_modules`, `__pycache__`, `.venv`, `dist`, `build`
+
+### Switch Knowledge Mode
+
+```bash
+You: /knowledge general   # LLM uses only its training data (default)
+You: /knowledge local     # Answers ONLY from your indexed files
+You: /knowledge hybrid    # Uses both local files + general knowledge
+```
+
+### Manage Your Index
+
+```bash
+You: /index list          # See what's been indexed
+You: /index clear         # Delete all indexed data
+```
+
+### How It Works
+
+1. `/index` splits your files into ~500-word chunks
+2. Each chunk is converted to a vector embedding (locally, using `all-MiniLM-L6-v2`)
+3. Embeddings are stored in ChromaDB (local database at `~/.chatty-agent/vectordb/`)
+4. When you ask a question, the most relevant chunks are found and attached to your prompt
+5. The LLM answers using those chunks as context
+
+### Security
+
+- **Embeddings are generated 100% locally** — your file contents never leave your machine for indexing
+- The LLM only sees the relevant chunks (not your entire filesystem)
+- All data stored locally in `~/.chatty-agent/vectordb/`
+
+---
+
 ## Available Models (7)
 
 | Key | Provider | Model | Streaming |
