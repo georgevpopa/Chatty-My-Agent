@@ -1,19 +1,23 @@
 """Web UI for Chatty-My-Agent using Flask."""
 import os
+import sys
 import json
 from pathlib import Path
 from flask import Flask, render_template_string, request, jsonify
 from dotenv import load_dotenv
 
+sys.path.insert(0, r"C:\dev\torch_pkg")
 load_dotenv()
 
 from llm import call_model, MODELS
 from tools import read_file, run_command, web_search
+from rag import index_file, index_folder, get_context_for_query, list_indexed, clear_index
 
 app = Flask(__name__)
 messages = []
 current_model = "gemini"
 fallback_model = "groq"
+knowledge_mode = "general"
 
 HTML = """
 <!DOCTYPE html>
@@ -23,10 +27,12 @@ HTML = """
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: 'Segoe UI', sans-serif; background: #1a1a2e; color: #eee; height: 100vh; display: flex; flex-direction: column; }
-        #header { padding: 12px 20px; background: #16213e; border-bottom: 1px solid #0f3460; text-align: center; display: flex; align-items: center; justify-content: space-between; }
+        #header { padding: 12px 20px; background: #16213e; border-bottom: 1px solid #0f3460; display: flex; align-items: center; justify-content: space-between; }
         #mascot { color: #4ecca3; font-family: 'Courier New', monospace; font-size: 10px; line-height: 1.2; white-space: pre; text-align: left; }
-        #model-select { padding: 8px 12px; background: #1a1a2e; color: #4ecca3; border: 1px solid #4ecca3; border-radius: 6px; font-size: 0.9em; cursor: pointer; outline: none; }
-        #model-select option { background: #1a1a2e; color: #eee; }
+        .controls { display: flex; gap: 8px; align-items: center; }
+        select { padding: 6px 10px; background: #1a1a2e; color: #4ecca3; border: 1px solid #4ecca3; border-radius: 6px; font-size: 0.85em; cursor: pointer; outline: none; }
+        select option { background: #1a1a2e; color: #eee; }
+        .label { font-size: 0.7em; color: #888; text-transform: uppercase; }
         #chat { flex: 1; overflow-y: auto; padding: 20px; }
         .msg { margin-bottom: 16px; max-width: 80%; padding: 12px 16px; border-radius: 12px; line-height: 1.5; white-space: pre-wrap; word-wrap: break-word; }
         .user { background: #0f3460; margin-left: auto; border-bottom-right-radius: 4px; }
@@ -46,20 +52,32 @@ HTML = """
 ║■ ■║ Chatty
 ║ ▽ ║ Your Friendly Assistant
 ╚╦═╦╝/</pre>
-        <select id="model-select" onchange="switchModel(this.value)">
-        </select>
+        <div class="controls">
+            <div>
+                <div class="label">Model</div>
+                <select id="model-select" onchange="switchModel(this.value)"></select>
+            </div>
+            <div>
+                <div class="label">Knowledge</div>
+                <select id="knowledge-select" onchange="switchKnowledge(this.value)">
+                    <option value="general">General</option>
+                    <option value="local">Local Only</option>
+                    <option value="hybrid">Hybrid</option>
+                </select>
+            </div>
+        </div>
     </div>
     <div id="chat"></div>
     <div id="input-area">
-        <input id="input" placeholder="Ask anything... (or use /commands)" autofocus>
+        <input id="input" placeholder="Ask anything... (/index path to add files, /search, /read, /run)" autofocus>
         <button id="send" onclick="send()">Send</button>
     </div>
     <script>
         const chat = document.getElementById('chat');
         const input = document.getElementById('input');
         const modelSelect = document.getElementById('model-select');
+        const knowledgeSelect = document.getElementById('knowledge-select');
 
-        // Load models on start
         fetch('/models').then(r => r.json()).then(data => {
             modelSelect.innerHTML = '';
             data.models.forEach(m => {
@@ -69,6 +87,10 @@ HTML = """
                 if (m.active) opt.selected = true;
                 modelSelect.appendChild(opt);
             });
+        });
+
+        fetch('/knowledge-mode').then(r => r.json()).then(data => {
+            knowledgeSelect.value = data.mode;
         });
 
         input.addEventListener('keydown', e => { if (e.key === 'Enter') send(); });
@@ -96,7 +118,17 @@ HTML = """
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({model: key})
             }).then(r => r.json()).then(data => {
-                addSystem('Switched to ' + data.name);
+                addSystem('Model: ' + data.name);
+            });
+        }
+
+        function switchKnowledge(mode) {
+            fetch('/switch-knowledge', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({mode: mode})
+            }).then(r => r.json()).then(data => {
+                addSystem('Knowledge: ' + data.mode);
             });
         }
 
@@ -141,6 +173,11 @@ def get_models():
     return jsonify({"models": model_list})
 
 
+@app.route("/knowledge-mode")
+def get_knowledge_mode():
+    return jsonify({"mode": knowledge_mode})
+
+
 @app.route("/switch-model", methods=["POST"])
 def switch_model():
     global current_model
@@ -152,13 +189,53 @@ def switch_model():
     return jsonify({"error": "Unknown model"}), 400
 
 
+@app.route("/switch-knowledge", methods=["POST"])
+def switch_knowledge():
+    global knowledge_mode
+    data = request.json
+    mode = data.get("mode")
+    if mode in ("general", "local", "hybrid"):
+        knowledge_mode = mode
+        return jsonify({"mode": mode})
+    return jsonify({"error": "Unknown mode"}), 400
+
+
 @app.route("/chat", methods=["POST"])
 def chat_endpoint():
-    global messages, current_model, fallback_model
+    global messages, current_model, fallback_model, knowledge_mode
     data = request.json
     user_msg = data.get("message", "")
 
-    # Handle commands
+    # Handle /index command
+    if user_msg.startswith("/index "):
+        path = user_msg[7:].strip()
+        if path == "list":
+            try:
+                info = list_indexed()
+                return jsonify({"response": f"Indexed: {info['count']} chunks from {len(info['sources'])} files"})
+            except Exception as e:
+                return jsonify({"response": f"Error: {e}"})
+        elif path == "clear":
+            try:
+                clear_index()
+                return jsonify({"response": "Index cleared."})
+            except Exception as e:
+                return jsonify({"response": f"Error: {e}"})
+        else:
+            try:
+                p = Path(path)
+                if p.is_dir():
+                    stats = index_folder(path)
+                    return jsonify({"response": f"Indexed {stats['files']} files ({stats['chunks']} chunks)"})
+                elif p.is_file():
+                    n = index_file(path)
+                    return jsonify({"response": f"Indexed {p.name} ({n} chunks)"})
+                else:
+                    return jsonify({"response": f"Path not found: {path}"})
+            except Exception as e:
+                return jsonify({"response": f"Error: {e}"})
+
+    # Handle other commands
     if user_msg.startswith("/search "):
         query = user_msg[8:]
         results = web_search(query)
@@ -177,12 +254,24 @@ def chat_endpoint():
     else:
         messages.append({"role": "user", "content": user_msg})
 
+    # Add RAG context if in local/hybrid mode
+    augmented = messages.copy()
+    if knowledge_mode in ("local", "hybrid") and messages:
+        last_msg = messages[-1]["content"]
+        rag_context = get_context_for_query(last_msg)
+        if rag_context:
+            prefix = "[Local Knowledge"
+            if knowledge_mode == "local":
+                prefix += " - answer ONLY from this data"
+            prefix += "]:\n\n"
+            augmented = [{"role": "user", "content": prefix + rag_context}] + augmented
+
     # Get response with fallback
     try:
-        response = call_model(current_model, messages)
+        response = call_model(current_model, augmented)
     except Exception as e:
         try:
-            response = call_model(fallback_model, messages)
+            response = call_model(fallback_model, augmented)
         except Exception as e2:
             response = f"Both providers failed:\n{current_model}: {e}\n{fallback_model}: {e2}"
 

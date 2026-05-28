@@ -338,6 +338,8 @@ python web_ui.py
 Opens at http://localhost:5000. Features:
 - Chat with AI (same as CLI)
 - **Model selector dropdown** in the header — switch between all 7 providers instantly
+- **Knowledge mode selector** — switch between general/local/hybrid
+- **Index files** via `/index <path>` command in chat
 - Supports `/search`, `/read`, `/run`, `/clear` commands
 - Auto-fallback if selected model fails
 - Dark theme matching the CLI
@@ -411,8 +413,12 @@ All persistent data is in `~/.chatty-agent/`:
 |---------|----------|
 | `ModuleNotFoundError: No module named 'flask'` | Run `pip install flask` |
 | `ModuleNotFoundError: No module named 'sounddevice'` | Run `pip install sounddevice numpy` |
+| `ModuleNotFoundError: No module named 'chromadb'` | Run `pip install chromadb opentelemetry-exporter-otlp-proto-grpc` |
+| `ModuleNotFoundError: No module named 'sentence_transformers'` | Run `pip install sentence-transformers` |
+| Torch install fails (path too long on Windows) | Run `pip install torch --target C:\dev\torch_pkg` then add path in agent.py |
 | Gemini quota exceeded | Wait 60s or switch model: `/model groq` |
 | Groq `proxies` error | Run `pip install --upgrade groq httpx` |
+| `/index` shows 0 files | Check file extensions are supported (see RAG section) |
 | Web UI mascot looks scrambled | Hard refresh browser (Ctrl+Shift+R) |
 | `Both providers failed` | Check your `.env` keys are correct |
 
