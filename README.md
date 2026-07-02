@@ -425,3 +425,11 @@ All persistent data is in `~/.chatty-agent/`:
 ## License
 
 MIT
+
+
+---
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=georgevpopa/Chatty-My-Agent&type=Date)](https://star-history.com/#georgevpopa/Chatty-My-Agent&Date)
+
